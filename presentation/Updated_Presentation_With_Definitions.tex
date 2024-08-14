@@ -1,0 +1,116 @@
+
+\documentclass{beamer}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{xcolor}
+
+\title{Optimization of Energy Efficiency and Execution Time in Cloud Computing}
+\subtitle{Using MILP, Simulated Annealing, Genetic Algorithms, and Multi-Objective Goal Programming}
+\author{Tom Jardin}
+\date{\today}
+
+\begin{document}
+
+\frame{\titlepage}
+
+\begin{frame}{Introduction}
+    \begin{itemize}
+        \item As cloud computing grows, so does energy consumption in data centers, leading to increased operational costs and CO2 emissions.
+        \item This project explores how optimization techniques can enhance energy efficiency and reduce execution time in cloud environments.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Problem Statement}
+    \textbf{Objective:} To minimize energy consumption and execution time in a cloud computing environment.
+    
+    \textbf{Key Features:}
+    \begin{itemize}
+        \item CPU usage
+        \item Memory usage
+        \item Network traffic
+        \item Power consumption
+        \item Number of executed instructions
+        \item Execution time
+        \item Task type, priority, and status
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Variable Definitions}
+    \textbf{Decision Variables:}
+    \begin{itemize}
+        \item \(x_{it}\): Binary variable indicating whether task \(i\) is scheduled to run at time \(t\).
+        \item \(r_{ij}\): Continuous variable representing the amount of resource \(j\) allocated to task \(i\).
+    \end{itemize}
+
+    \textbf{Parameters:}
+    \begin{itemize}
+        \item \(R_j^{\text{max}}\): Maximum available amount of resource \(j\).
+        \item \(\alpha, \beta\): Weights assigned to energy consumption and execution time in the objective function.
+        \item \(\Delta E\): Change in cost (energy or time) in Simulated Annealing.
+        \item \(G_1, G_2\): Goals for energy consumption and execution time in MOGP.
+        \item \(w_1, w_2\): Weights assigned to deviations in MOGP.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Mixed Integer Linear Programming (MILP)}
+    \textbf{Objective:} Minimize the total cost of energy consumption and execution time.
+    \begin{align*}
+        \text{Minimize } Z &= \alpha \times \text{Energy Consumption} + \beta \times \text{Execution Time}
+    \end{align*}
+    \textbf{Subject to:}
+    \begin{align*}
+        &\text{Resource Constraints: } \sum_{i} r_{ij} \times x_{it} \leq R_{j}^{\text{max}}, \quad \forall j, t \\
+        &\text{Task Completion Constraints: } \sum_{t} x_{it} = 1, \quad \forall i \\
+        &\text{Binary Constraints on decision variables.}
+    \end{align*}
+\end{frame}
+
+\begin{frame}{Simulated Annealing (SA)}
+    \textbf{Objective:} Iteratively minimize energy consumption and execution time by exploring different configurations.
+    \begin{itemize}
+        \item Start with an initial solution \(S\) and initial temperature \(T\).
+        \item For each iteration, generate a new solution \(S'\) in the neighborhood of \(S\).
+        \item Compute the change in cost \(\Delta E = E(S') - E(S)\).
+        \item If \(\Delta E < 0\), accept \(S'\). Else, accept \(S'\) with probability \(\exp(-\Delta E / T)\).
+        \item Decrease the temperature \(T\) and repeat until convergence.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Genetic Algorithms (GA)}
+    \textbf{Objective:} Evolve task allocation strategies to minimize energy consumption and optimize execution time.
+    \begin{itemize}
+        \item Initialize a population of chromosomes (task allocations).
+        \item Evaluate fitness: \(f(\text{chromosome}) = w_1 \times \text{Energy Consumption} + w_2 \times \text{Execution Time}\).
+        \item Selection: Choose the fittest chromosomes.
+        \item Crossover: Create offspring by combining pairs of chromosomes.
+        \item Mutation: Introduce small changes to chromosomes.
+        \item Repeat until convergence or maximum iterations.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Multi-Objective Goal Programming (MOGP)}
+    \textbf{Objective:} Balance multiple goals like minimizing energy consumption and execution time.
+    \begin{itemize}
+        \item Define Goals: \(G_1\) - Minimize Energy, \(G_2\) - Minimize Execution Time.
+        \item Formulate deviation variables (\(d^+\) and \(d^-\)) for each goal.
+        \item Minimize the weighted sum of deviations: \(\text{Minimize } Z = w_1 \times d_1^+ + w_2 \times d_2^-\).
+        \item Subject to: Goal constraints, resource constraints.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Implementation Strategy}
+    \begin{itemize}
+        \item Implement the problem using R, with focus on data preprocessing, algorithm application, and evaluation metrics.
+        \item \textbf{Data Preparation}: Extract and normalize key features from the dataset.
+        \item \textbf{Algorithm Application}: Apply MILP, SA, GA, and MOGP to optimize the objectives.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Expected Outcomes}
+    \begin{itemize}
+        \item Anticipated results include improved energy efficiency, reduced execution time, and insights into trade-offs between objectives.
+        \item Evaluation will be based on how well the optimization techniques balance energy consumption and execution time.
+    \end{itemize}
+\end{frame}
+
+\end{document}
