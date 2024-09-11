@@ -1,0 +1,64 @@
+---
+title: "Cloud Resource Allocation and Cost Optimization"
+author: "Roger Bukuru"
+date: '`r Sys.Date()`'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data Cleaning
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+
+# Clear workspace
+rm(list = ls())
+
+#fileDir = "data/vmCloud_data.csv"
+#vm_cloud = read.csv(fileDir)
+#projectData = vm_cloud[1:30000, ]
+#write_csv(projectData, "data/vm_cloud_data.csv")
+
+# Load data
+fileDir <- "data/vm_cloud_data.csv"
+vm_cloud <- read.csv(fileDir)
+
+# Select relevant columns (skip the first three columns as mentioned)
+vm_cloud <- vm_cloud[, -c(1,2)]
+
+# Step 1: One-hot encode character features
+# Identify character columns
+char_cols <- vm_cloud %>%
+  select(where(is.character))
+
+# One-hot encode using pivot_wider
+vm_cloud_encoded <- vm_cloud %>%
+  mutate(across(where(is.character), as.factor)) %>%
+  model.matrix(~ . - 1, data = .) %>%
+  as.data.frame()
+
+# Step 2: Remove rows with null values
+vm_cloud_clean <- vm_cloud_encoded %>%
+  drop_na()
+
+# Step 3: Standardize numeric features
+# Identify numeric columns
+numeric_cols <- vm_cloud_clean %>%
+  select(where(is.numeric))
+
+# Standardize the numeric columns
+vm_cloud_standardized <- vm_cloud_clean %>%
+  mutate(across(where(is.numeric), ~ scale(.)[, 1]))
+
+# View the first few rows of the cleaned data
+head(vm_cloud_standardized, 10)
+
+
+```
+
+
+
