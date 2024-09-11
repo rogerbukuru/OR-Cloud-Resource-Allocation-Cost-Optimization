@@ -21,10 +21,10 @@ rm(list = ls())
 #fileDir = "data/vmCloud_data.csv"
 #vm_cloud = read.csv(fileDir)
 #projectData = vm_cloud[1:30000, ]
-#write_csv(projectData, "data/vm_cloud_data.csv")
+#write_csv(projectData, "vm_cloud_data.csv")
 
 # Load data
-fileDir <- "data/vm_cloud_data.csv"
+fileDir <- "vm_cloud_data.csv"
 vm_cloud <- read.csv(fileDir)
 
 # Select relevant columns (skip the first three columns as mentioned)
