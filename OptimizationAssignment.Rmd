@@ -53,17 +53,6 @@ vm_cloud_standardized <- vm_cloud_clean %>%
 head(vm_cloud_standardized, 10)
 
 
-
-
-```
-
-# Linear Programming
-
-```{r}
-
-library(Rglpk)
-
-
 # Select relevant columns for the optimization problem (after one-hot encoding and standardization)
 vm_cloud_clean_analysis <- vm_cloud_standardized %>%
   select(cpu_usage, memory_usage, network_traffic, power_consumption,
@@ -72,11 +61,20 @@ vm_cloud_clean_analysis <- vm_cloud_standardized %>%
 # Preview the cleaned data
 head(vm_cloud_clean_analysis)
 
+
 ```
+
+
+
+# Linear Programming
+
 
 ## Non-Priority Resource Allocation
 
 ```{r}
+
+library(Rglpk)
+
 # Objective function: weighted sum of energy efficiency and execution time
 weight_energy <- 0.5
 weight_time <- 0.5
@@ -721,7 +719,7 @@ weight_time <- 0.5
 max_cpu <- 0.8  # Max CPU usage allowed
 max_memory <- 0.8  # Max memory usage allowed
 pop_size <- 100
-num_generations <- 5
+num_generations <- 2
 crossover_rate <- 0.8
 mutation_rate <- 0.01
 tournament_size <- 3
