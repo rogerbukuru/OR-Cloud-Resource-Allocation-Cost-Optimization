@@ -763,3 +763,210 @@ plot(ga_result$fitness_history, type = "l", col = "blue",
      main = "Fitness over Generations")
 
 ```
+
+# Multi-Objective Goal Programming
+
+## Archemedian 
+
+```{r}
+# Archemedian Method Function using Rglpk
+archemedian_goal_programming <- function(data, weights, max_cpu, max_memory) {
+  # Decision variables: x_i = 1 if task i is selected, 0 otherwise
+  # Objective: Minimize w1 * sum(energy_efficiency_i * x_i) + w2 * sum(execution_time_i * x_i)
+  
+  # Objective coefficients
+  obj_coeff <- weights["energy"] * data$energy_efficiency + 
+               weights["time"] * data$execution_time
+  
+  # Constraint coefficients
+  cpu_constraint <- data$cpu_usage
+  memory_constraint <- data$memory_usage
+  
+  # Constraint matrix
+  constr_matrix <- rbind(cpu_constraint, memory_constraint)
+  
+  # Constraint directions
+  constr_dir <- c("<=", "<=")
+  
+  # Constraint right-hand side
+  constr_rhs <- c(max_cpu, max_memory)
+  
+  # Define bounds for variables (binary: 0 or 1)
+  bounds <- list(lower = list(ind = 1:num_tasks, val = rep(0, num_tasks)),
+                 upper = list(ind = 1:num_tasks, val = rep(1, num_tasks)))
+  
+  # Define variable types (binary)
+  var_types <- rep("B", num_tasks)
+  
+  # Solve the MIP
+  solution <- Rglpk_solve_LP(
+    obj = obj_coeff,
+    mat = constr_matrix,
+    dir = constr_dir,
+    rhs = constr_rhs,
+    bounds = bounds,
+    types = var_types,
+    max = FALSE
+  )
+  
+  if (solution$status == 0) {  # 0 indicates success
+    selected_tasks <- which(solution$solution == 1)
+    total_energy <- sum(data$energy_efficiency[selected_tasks])
+    total_time <- sum(data$execution_time[selected_tasks])
+    return(list(
+      selected_tasks = selected_tasks,
+      total_energy = total_energy,
+      total_time = total_time,
+      objective_value = solution$objval
+    ))
+  } else {
+    return(NULL)
+  }
+}
+
+```
+
+## Tchebycheff 
+
+```{r}
+# Tchebycheff Method Function using Rglpk
+tchebycheff_goal_programming <- function(data, weights, max_cpu, max_memory) {
+  # Ideal values (minimum possible values)
+  G1_ideal <- min(data$energy_efficiency)
+  G2_ideal <- min(data$execution_time)
+  
+  # Number of decision variables (tasks) and auxiliary variable Z
+  num_tasks <- nrow(data)
+  
+  # Objective: Minimize Z
+  # Total variables: x1, x2, ..., xn, Z
+  # Objective coefficients: 0 for x_i, 1 for Z
+  obj_coeff <- c(rep(0, num_tasks), 1)
+  
+  # Constraint matrix
+  # Each constraint corresponds to a goal's weighted deviation
+  # Constraint 1: Z >= w1 * (G1_ideal - sum(G1_i * x_i))
+  # Constraint 2: Z >= w2 * (G2_ideal - sum(G2_i * x_i))
+  # Constraint 3: sum(CPU_i * x_i) <= Max_CPU
+  # Constraint 4: sum(Memory_i * x_i) <= Max_Memory
+  
+  # Constraint 1 coefficients: -w1 * G1_i for x_i and 1 for Z
+  constr1 <- c(-weights["energy"] * data$energy_efficiency, 1)
+  
+  # Constraint 2 coefficients: -w2 * G2_i for x_i and 1 for Z
+  constr2 <- c(-weights["time"] * data$execution_time, 1)
+  
+  # Constraint 3 coefficients: CPU_i for x_i and 0 for Z
+  constr3 <- c(data$cpu_usage, 0)
+  
+  # Constraint 4 coefficients: Memory_i for x_i and 0 for Z
+  constr4 <- c(data$memory_usage, 0)
+  
+  # Combine constraints into a matrix
+  constr_matrix <- rbind(constr1, constr2, constr3, constr4)
+  
+  # Constraint directions
+  constr_dir <- c(">=", ">=", "<=", "<=")
+  
+  # Constraint right-hand sides
+  constr_rhs <- c(
+    weights["energy"] * G1_ideal,
+    weights["time"] * G2_ideal,
+    max_cpu,
+    max_memory
+  )
+  
+  # Define bounds for variables
+  # x_i: binary (0 or 1)
+  # Z: continuous, >=0
+  # Rglpk allows defining separate bounds; we'll define for each variable
+  # Variable indices: 1 to num_tasks are x_i, num_tasks + 1 is Z
+  bounds <- list(
+    lower = list(ind = 1:(num_tasks + 1), val = rep(0, num_tasks + 1)),
+    upper = list(ind = 1:(num_tasks + 1), val = c(rep(1, num_tasks), Inf))
+  )
+  
+  # Define variable types
+  var_types <- c(rep("B", num_tasks), "C")  # "B" for binary, "C" for continuous
+  
+  # Solve the MIP
+  solution <- Rglpk_solve_LP(
+    obj = obj_coeff,
+    mat = constr_matrix,
+    dir = constr_dir,
+    rhs = constr_rhs,
+    bounds = bounds,
+    types = var_types,
+    max = FALSE
+  )
+  
+  if (solution$status == 0) {  # 0 indicates success
+    x_solution <- solution$solution[1:num_tasks]
+    Z_value <- solution$solution[num_tasks + 1]
+    
+    selected_tasks <- which(x_solution == 1)
+    total_energy <- sum(data$energy_efficiency[selected_tasks])
+    total_time <- sum(data$execution_time[selected_tasks])
+    
+    return(list(
+      selected_tasks = selected_tasks,
+      total_energy = total_energy,
+      total_time = total_time,
+      Z = Z_value
+    ))
+  } else {
+    return(NULL)
+  }
+}
+
+```
+
+
+```{r}
+# Define weights for the objectives
+# Adjust weights based on the importance of each goal
+weights <- c(energy = 0.5, time = 0.5)  # Equal importance
+
+# Define resource constraints
+max_cpu <- 1.0   # Maximum CPU usage allowed
+max_memory <- 1.0  # Maximum memory usage allowed
+
+# Apply Archemedian Goal Programming
+archemedian_result <- archemedian_goal_programming(
+  data = vm_cloud_clean_analysis,
+  weights = weights,
+  max_cpu = max_cpu,
+  max_memory = max_memory
+)
+
+# Check if a solution was found
+if (!is.null(archemedian_result)) {
+  cat("Archemedian Method Solution:\n")
+  cat("Selected Tasks:", archemedian_result$selected_tasks, "\n")
+  cat("Total Energy Consumption:", archemedian_result$total_energy, "\n")
+  cat("Total Execution Time:", archemedian_result$total_time, "\n")
+  cat("Objective Value:", archemedian_result$objective_value, "\n\n")
+} else {
+  cat("No feasible solution found using the Archemedian Method.\n\n")
+}
+
+# Apply Tchebycheff Goal Programming
+tchebycheff_result <- tchebycheff_goal_programming(
+  data = vm_cloud_clean_analysis,
+  weights = weights,
+  max_cpu = max_cpu,
+  max_memory = max_memory
+)
+
+# Check if a solution was found
+if (!is.null(tchebycheff_result)) {
+  cat("Tchebycheff Method Solution:\n")
+  cat("Selected Tasks:", tchebycheff_result$selected_tasks, "\n")
+  cat("Total Energy Consumption:", tchebycheff_result$total_energy, "\n")
+  cat("Total Execution Time:", tchebycheff_result$total_time, "\n")
+  cat("Z (Maximum Weighted Deviation):", tchebycheff_result$Z, "\n")
+} else {
+  cat("No feasible solution found using the Tchebycheff Method.\n")
+}
+
+```
