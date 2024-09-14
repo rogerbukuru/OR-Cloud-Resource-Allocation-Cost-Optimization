@@ -18,17 +18,12 @@ library(tidyverse)
 # Clear workspace
 rm(list = ls())
 
-#fileDir = "data/vmCloud_data.csv"
-#vm_cloud = read.csv(fileDir)
-#projectData = vm_cloud[1:30000, ]
-#write_csv(projectData, "vm_cloud_data.csv")
-
 # Load data
 fileDir <- "vm_cloud_data.csv"
 vm_cloud <- read.csv(fileDir)
 
-# Select relevant columns (skip the first three columns as mentioned)
-vm_cloud <- vm_cloud[, -c(1,2)]
+# Select relevant columns (skip the first two columns as mentioned)
+vm_cloud <- vm_cloud[1:11000, -c(1,2)]
 
 # Step 1: One-hot encode character features
 # Identify character columns
@@ -45,20 +40,728 @@ vm_cloud_encoded <- vm_cloud %>%
 vm_cloud_clean <- vm_cloud_encoded %>%
   drop_na()
 
-# Step 3: Standardize numeric features
-# Identify numeric columns
-numeric_cols <- vm_cloud_clean %>%
-  select(where(is.numeric))
+# Step 3: Min-Max Normalize numeric features
+min_max_normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
 
-# Standardize the numeric columns
+# Apply min-max normalization to numeric columns
 vm_cloud_standardized <- vm_cloud_clean %>%
-  mutate(across(where(is.numeric), ~ scale(.)[, 1]))
+  mutate(across(where(is.numeric), ~ min_max_normalize(.)))
 
-# View the first few rows of the cleaned data
+# View the first few rows of the cleaned and normalized data
 head(vm_cloud_standardized, 10)
+
+
+
+
+```
+
+# Linear Programming
+
+```{r}
+
+library(Rglpk)
+
+
+# Select relevant columns for the optimization problem (after one-hot encoding and standardization)
+vm_cloud_clean_analysis <- vm_cloud_standardized %>%
+  select(cpu_usage, memory_usage, network_traffic, power_consumption,
+         num_executed_instructions, execution_time, energy_efficiency, task_priorityhigh, task_prioritylow, task_prioritymedium)
+
+# Preview the cleaned data
+head(vm_cloud_clean_analysis)
+
+```
+
+## Non-Priority Resource Allocation
+
+```{r}
+# Objective function: weighted sum of energy efficiency and execution time
+weight_energy <- 0.5
+weight_time <- 0.5
+obj <- weight_energy * vm_cloud_clean_analysis$energy_efficiency + weight_time * vm_cloud_clean_analysis$execution_time
+
+# Number of tasks
+n_tasks <- nrow(vm_cloud_clean_analysis)  # Number of tasks
+
+# Define the task assignment constraints: ensure each task is assigned exactly once
+task_assignment_constraint <- matrix(1, nrow = n_tasks, ncol = n_tasks)  # Sum over decision variables for each task
+
+# Define the constraint matrix for resource usage (CPU and memory constraints)
+constraints_matrix <- rbind(
+  vm_cloud_clean_analysis$cpu_usage,   # CPU usage constraint
+  vm_cloud_clean_analysis$memory_usage,  # Memory usage constraint
+  task_assignment_constraint  # Task assignment constraint (each task assigned once)
+)
+
+# Define the constraint directions
+constraint_directions <- c("<=", "<=", rep("==", n_tasks))  # Two resource constraints, then task assignments
+
+# Define the right-hand side of the constraints
+resource_limits <- c(1.5, 1.5, rep(1, n_tasks))  # Max CPU and memory usage, and exactly one task assignment per task
+
+# Define bounds for the decision variables (binary variables)
+variable_bounds <- list(lower = rep(0, length(obj)), upper = rep(1, length(obj)))
+
+# Define variable types (binary decision variables)
+variable_types <- rep("B", length(obj))
+
+# Solve the MIP for minimizing energy efficiency and execution time
+solution <- Rglpk_solve_LP(obj = obj,
+                           mat = constraints_matrix,
+                           dir = constraint_directions,
+                           rhs = resource_limits,
+                           bounds = variable_bounds,
+                           types = variable_types,
+                           max = FALSE)
+
+# Display the solution for energy efficiency and execution time
+solution_values <- solution$solution
+optimal_value <- solution$optimum
+
+# View the solution
+print(solution_values)
+print(paste("Optimal value:", optimal_value))
+
+which(solution_values == 1)
+```
+
+## Priority Resource Allocation
+
+```{r}
+
+# Define the weights for each priority level
+priority_high_weight <- 3
+priority_medium_weight <- 2
+priority_low_weight <- 1
+
+# Calculate the priority weight for each task by combining the priority columns
+priority_weights <- priority_high_weight * vm_cloud_clean_analysis$task_priorityhigh +
+                    priority_medium_weight * vm_cloud_clean_analysis$task_prioritymedium +
+                    priority_low_weight * vm_cloud_clean_analysis$task_prioritylow
+
+# Normalize the priority weights to ensure they are proportional (optional)
+priority_weights <- priority_weights / max(priority_weights)
+
+# Objective function: weighted sum of energy efficiency and execution time, with priority weighting
+weight_energy <- 0.5
+weight_time <- 0.5
+
+# Adjust the objective function to prioritize tasks based on their priority levels
+obj <- priority_weights * (weight_energy * vm_cloud_clean_analysis$energy_efficiency + 
+                           weight_time * vm_cloud_clean_analysis$execution_time)
+
+# Number of tasks
+n_tasks <- nrow(vm_cloud_clean_analysis)  # Number of tasks
+
+# Define the task assignment constraints: ensure each task is assigned exactly once
+task_assignment_constraint <- matrix(1, nrow = n_tasks, ncol = n_tasks)  # Sum over decision variables for each task
+
+# Define the constraint matrix for resource usage (CPU and memory constraints)
+constraints_matrix <- rbind(
+  vm_cloud_clean_analysis$cpu_usage,   # CPU usage constraint
+  vm_cloud_clean_analysis$memory_usage,  # Memory usage constraint
+  task_assignment_constraint  # Task assignment constraint (each task assigned once)
+)
+
+# Define the constraint directions
+constraint_directions <- c("<=", "<=", rep("==", n_tasks))  # Two resource constraints, then task assignments
+
+# Define the right-hand side of the constraints
+resource_limits <- c(5.0, 5.0, rep(1, n_tasks))  # Max CPU and memory usage, and exactly one task assignment per task
+
+# Define bounds for the decision variables (binary variables)
+variable_bounds <- list(lower = rep(0, length(obj)), upper = rep(1, length(obj)))
+
+# Define variable types (binary decision variables)
+variable_types <- rep("B", length(obj))
+
+# Solve the MILP for minimizing energy efficiency and execution time with task prioritization
+solution <- Rglpk_solve_LP(obj = obj,
+                           mat = constraints_matrix,
+                           dir = constraint_directions,
+                           rhs = resource_limits,
+                           bounds = variable_bounds,
+                           types = variable_types,
+                           max = FALSE)
+
+# Display the solution for energy efficiency and execution time
+solution_values <- solution$solution
+optimal_value <- solution$optimum
+
+# View the solution
+print(solution_values)
+print(paste("Optimal value:", optimal_value))
 
 
 ```
 
 
+# Simulated Annealing
 
+```{r}
+# Load necessary libraries
+library(tidyverse)
+
+# Define the objective function
+objective_function <- function(solution, weight_energy, weight_time, energy_efficiency, execution_time) {
+  # Objective function is a weighted sum of energy efficiency and execution time
+  energy_part <- sum(solution * energy_efficiency)
+  time_part <- sum(solution * execution_time)
+  return(weight_energy * energy_part + weight_time * time_part)
+}
+
+# Generate a random neighbor (small change to the solution)
+generate_neighbor <- function(solution) {
+  # Flip a random bit (reassign a random task)
+  neighbor <- solution
+  task_to_change <- sample(1:length(solution), 1)
+  neighbor[task_to_change] <- 1 - neighbor[task_to_change]  # Flip 0 to 1 or 1 to 0
+  return(neighbor)
+}
+
+# Check if the neighbor is feasible based on resource constraints
+check_feasibility <- function(solution, cpu_usage, memory_usage, max_cpu, max_memory) {
+  total_cpu <- sum(solution * cpu_usage)
+  total_memory <- sum(solution * memory_usage)
+  return(total_cpu <= max_cpu && total_memory <= max_memory)
+}
+
+# Simulated Annealing Algorithm
+simulated_annealing <- function(initial_solution, weight_energy, weight_time, energy_efficiency, execution_time,
+                                cpu_usage, memory_usage, max_cpu, max_memory, max_iter, init_temp, cooling_rate) {
+  # Initialize
+  current_solution <- initial_solution
+  best_solution <- current_solution
+  current_temp <- init_temp
+  best_objective <- objective_function(current_solution, weight_energy, weight_time, energy_efficiency, execution_time)
+  
+  for (i in 1:max_iter) {
+    # Generate a neighbor solution
+    neighbor <- generate_neighbor(current_solution)
+    
+    # Check if the neighbor is feasible
+    if (check_feasibility(neighbor, cpu_usage, memory_usage, max_cpu, max_memory)) {
+      # Calculate objective value for the neighbor
+      neighbor_objective <- objective_function(neighbor, weight_energy, weight_time, energy_efficiency, execution_time)
+      
+      # Calculate the change in objective
+      delta_objective <- neighbor_objective - best_objective
+      
+      # Accept the neighbor if it's better or based on acceptance probability
+      if (delta_objective < 0 || runif(1) < exp(-delta_objective / current_temp)) {
+        current_solution <- neighbor
+        best_objective <- neighbor_objective
+        
+        # Update the best solution found so far
+        if (best_objective < objective_function(best_solution, weight_energy, weight_time, energy_efficiency, execution_time)) {
+          best_solution <- current_solution
+        }
+      }
+    }
+    
+    # Cool down the temperature
+    current_temp <- current_temp * cooling_rate
+  }
+  
+  return(list(best_solution = best_solution, best_objective = best_objective))
+}
+
+# Example usage
+
+# Sample data (you should replace this with your actual data)
+energy_efficiency <- vm_cloud_clean_analysis$energy_efficiency
+execution_time <- vm_cloud_clean_analysis$execution_time
+cpu_usage <- vm_cloud_clean_analysis$cpu_usage
+memory_usage <- vm_cloud_clean_analysis$memory_usage
+
+# Parameters
+weight_energy <- 0.5
+weight_time <- 0.5
+max_cpu <- 0.8  # Max CPU usage allowed
+max_memory <- 0.8  # Max memory usage allowed
+initial_solution <- sample(c(0, 1), length(energy_efficiency), replace = TRUE)  # Random initial solution
+max_iter <- 1000
+init_temp <- 10
+cooling_rate <- 0.99
+
+# Run simulated annealing
+result <- simulated_annealing(initial_solution, weight_energy, weight_time, energy_efficiency, execution_time,
+                              cpu_usage, memory_usage, max_cpu, max_memory, max_iter, init_temp, cooling_rate)
+
+# View the best solution and its objective value
+print(result$best_solution)
+print(paste("Best objective value:", result$best_objective))
+
+which(result$best_solution==1)
+
+# Review temperature reduction method
+```
+
+# Genetic Algorithm.
+
+## Objective Function
+
+```{r}
+# 1. Objective Function
+objective_function <- function(solution, weight_energy, weight_time, energy_efficiency, execution_time) {
+  energy_part <- sum(solution * energy_efficiency)
+  time_part <- sum(solution * execution_time)
+  return(weight_energy * energy_part + weight_time * time_part)
+}
+```
+
+## Initial Population
+
+```{r}
+# 2. Initial Population Generation
+generate_initial_population <- function(pop_size, num_tasks) {
+  population <- replicate(pop_size, sample(c(0, 1), num_tasks, replace = TRUE))
+  return(as.data.frame(t(population)))
+}
+```
+
+
+## Selection
+
+```{r}
+# 3. Selection: Tournament Selection
+tournament_selection <- function(population, fitness, tournament_size) {
+  selected_indices <- sample(1:nrow(population), tournament_size, replace = FALSE)
+  tournament_fitness <- fitness[selected_indices]
+  winner <- selected_indices[which.min(tournament_fitness)]  # Minimizing the objective
+  return(population[winner, ])
+}
+
+```
+
+
+## Crossover 
+
+```{r}
+
+# 4. Crossover Operators
+
+## a. Position-Based (n-point) Crossover
+n_point_crossover <- function(parent1, parent2, n_points = 2) {
+  points <- sort(sample(1:(length(parent1)-1), n_points))
+  child1 <- parent1
+  child2 <- parent2
+  flip <- FALSE
+  current_point <- 1
+  for (point in points) {
+    if (flip) {
+      child1[current_point:point] <- parent2[current_point:point]
+      child2[current_point:point] <- parent1[current_point:point]
+    }
+    flip <- !flip
+    current_point <- point + 1
+  }
+  # Handle the segment after the last point
+  if (flip) {
+    child1[current_point:length(parent1)] <- parent2[current_point:length(parent1)]
+    child2[current_point:length(parent2)] <- parent1[current_point:length(parent2)]
+  }
+  return(list(child1 = child1, child2 = child2))
+}
+
+## b. Single-Point Crossover
+single_point_crossover <- function(parent1, parent2) {
+  point <- sample(1:(length(parent1)-1), 1)
+  child1 <- c(parent1[1:point], parent2[(point + 1):length(parent2)])
+  child2 <- c(parent2[1:point], parent1[(point + 1):length(parent1)])
+  return(list(child1 = child1, child2 = child2))
+}
+
+## c. Uniform Crossover
+uniform_crossover <- function(parent1, parent2, swap_prob = 0.5) {
+  mask <- runif(length(parent1)) < swap_prob
+  child1 <- parent1
+  child2 <- parent2
+  child1[mask] <- parent2[mask]
+  child2[mask] <- parent1[mask]
+  return(list(child1 = child1, child2 = child2))
+}
+
+## d. Order-Based Crossover (Less Applicable for Binary)
+order_based_crossover <- function(parent1, parent2) {
+  size <- length(parent1)
+  child1 <- rep(NA, size)
+  child2 <- rep(NA, size)
+  
+  start <- sample(1:size, 1)
+  end <- sample(start:size, 1)
+  
+  child1[start:end] <- parent1[start:end]
+  child2[start:end] <- parent2[start:end]
+  
+  fill_order <- function(child, parent_other) {
+    current_pos <- 1
+    for (gene in parent_other) {
+      if (!(gene %in% child)) {
+        while (!is.na(child[current_pos])) {
+          current_pos <- current_pos + 1
+        }
+        child[current_pos] <- gene
+      }
+    }
+    # Replace remaining NAs with 0 (since binary)
+    child[is.na(child)] <- 0
+    return(child)
+  }
+  
+  child1 <- fill_order(child1, parent2)
+  child2 <- fill_order(child2, parent1)
+  
+  return(list(child1 = child1, child2 = child2))
+}
+
+## e. Partially Mapped Crossover (PMX) (Less Applicable for Binary)
+pmx_crossover <- function(parent1, parent2) {
+  size <- length(parent1)
+  points <- sort(sample(1:size, 2))
+  start <- points[1]
+  end <- points[2]
+  
+  child1 <- parent1
+  child2 <- parent2
+  
+  # Mapping segments
+  mapping1 <- parent1[start:end]
+  mapping2 <- parent2[start:end]
+  
+  # Swap the mapped segment
+  child1[start:end] <- mapping2
+  child2[start:end] <- mapping1
+  
+  return(list(child1 = child1, child2 = child2))
+}
+```
+
+## Mutation
+
+```{r}
+# 5. Mutation Operators
+
+## a. Random Swap Mutation
+random_swap_mutation <- function(individual, mutation_rate = 0.01) {
+  for (i in 1:length(individual)) {
+    if (runif(1) < mutation_rate) {
+      individual[i] <- 1 - individual[i]
+    }
+  }
+  return(individual)
+}
+
+## b. Inversion Mutation
+inversion_mutation <- function(individual, mutation_rate = 0.01) {
+  for (i in 1:length(individual)) {
+    if (runif(1) < mutation_rate) {
+      individual[i] <- 1 - individual[i]
+    }
+  }
+  return(individual)
+}
+
+## c. Scramble Mutation
+scramble_mutation <- function(individual, mutation_rate = 0.05) {
+  if (runif(1) < mutation_rate) {
+    # Define the subset to scramble
+    subset_size <- sample(2:5, 1)
+    if (length(individual) < subset_size) {
+      subset_size <- length(individual)
+    }
+    start <- sample(1:(length(individual) - subset_size + 1), 1)
+    end <- start + subset_size - 1
+    subset <- individual[start:end]
+    scrambled_subset <- sample(subset)
+    individual[start:end] <- scrambled_subset
+  }
+  return(individual)
+}
+
+## d. Insert Mutation
+insert_mutation <- function(individual, mutation_rate = 0.05) {
+  if (runif(1) < mutation_rate) {
+    pos1 <- sample(1:length(individual), 1)
+    pos2 <- sample(1:length(individual), 1)
+    while (pos2 == pos1) {
+      pos2 <- sample(1:length(individual), 1)
+    }
+    value <- individual[pos1]
+    individual <- individual[-pos1]
+    individual <- append(individual, value, after = pos2 - 1)
+  }
+  return(individual)
+}
+
+
+```
+
+## Feasibility Check
+
+```{r}
+# 6. Feasibility Check
+check_feasibility <- function(solution, cpu_usage, memory_usage, max_cpu, max_memory) {
+  total_cpu <- sum(solution * cpu_usage)
+  total_memory <- sum(solution * memory_usage)
+  return(total_cpu <= max_cpu && total_memory <= max_memory)
+}
+
+```
+
+
+```{r}
+# 7. Generation Models
+
+## a. Generational Model
+# Handled within the main GA loop
+
+## b. Steady-State Model
+# Handled within the main GA loop
+
+# 8. Genetic Algorithm Function
+genetic_algorithm <- function(
+  energy_efficiency,
+  execution_time,
+  cpu_usage,
+  memory_usage,
+  weight_energy = 0.5,
+  weight_time = 0.5,
+  max_cpu = 0.8,
+  max_memory = 0.8,
+  pop_size = 100,
+  num_generations = 100,
+  crossover_rate = 0.8,
+  mutation_rate = 0.01,
+  tournament_size = 3,
+  crossover_type = "n_point",  # Options: "n_point", "single_point", "uniform", "order_based", "pmx"
+  mutation_type = "swap",       # Options: "swap", "inversion", "scramble", "insert"
+  generation_model = "generational"  # Options: "generational", "steady_state"
+) {
+  num_tasks <- length(energy_efficiency)
+  
+  # Initialize population
+  population <- generate_initial_population(pop_size, num_tasks)
+  
+  # Evaluate fitness
+  fitness <- apply(population, 1, function(sol) {
+    obj <- objective_function(as.numeric(sol), weight_energy, weight_time, energy_efficiency, execution_time)
+    return(obj)
+  })
+  
+  # Initialize best solution tracking
+  best_fitness_history <- numeric(num_generations)
+  best_solution <- population[which.min(fitness), ]
+  best_fitness <- min(fitness)
+  
+  for (gen in 1:num_generations) {
+    new_population <- population
+    
+    if (generation_model == "generational") {
+      # Generational Model: Create a new population from scratch
+      offspring <- list()
+      while (length(offspring) < pop_size) {
+        # Selection
+        parent1 <- tournament_selection(population, fitness, tournament_size)
+        parent2 <- tournament_selection(population, fitness, tournament_size)
+        
+        # Crossover
+        if (runif(1) < crossover_rate) {
+          if (crossover_type == "n_point") {
+            children <- n_point_crossover(as.numeric(parent1), as.numeric(parent2), n_points = 2)
+          } else if (crossover_type == "single_point") {
+            children <- single_point_crossover(as.numeric(parent1), as.numeric(parent2))
+          } else if (crossover_type == "uniform") {
+            children <- uniform_crossover(as.numeric(parent1), as.numeric(parent2), swap_prob = 0.5)
+          } else if (crossover_type == "order_based") {
+            children <- order_based_crossover(as.numeric(parent1), as.numeric(parent2))
+          } else if (crossover_type == "pmx") {
+            children <- pmx_crossover(as.numeric(parent1), as.numeric(parent2))
+          } else {
+            # Default to no crossover
+            children <- list(child1 = as.numeric(parent1), child2 = as.numeric(parent2))
+          }
+        } else {
+          children <- list(child1 = as.numeric(parent1), child2 = as.numeric(parent2))
+        }
+        
+        # Mutation
+        if (mutation_type == "swap") {
+          children$child1 <- random_swap_mutation(children$child1, mutation_rate)
+          children$child2 <- random_swap_mutation(children$child2, mutation_rate)
+        } else if (mutation_type == "inversion") {
+          children$child1 <- inversion_mutation(children$child1, mutation_rate)
+          children$child2 <- inversion_mutation(children$child2, mutation_rate)
+        } else if (mutation_type == "scramble") {
+          children$child1 <- scramble_mutation(children$child1, mutation_rate)
+          children$child2 <- scramble_mutation(children$child2, mutation_rate)
+        } else if (mutation_type == "insert") {
+          children$child1 <- insert_mutation(children$child1, mutation_rate)
+          children$child2 <- insert_mutation(children$child2, mutation_rate)
+        }
+        
+        # Check feasibility and add to offspring
+        if (check_feasibility(children$child1, cpu_usage, memory_usage, max_cpu, max_memory)) {
+          offspring <- append(offspring, list(children$child1))
+        }
+        if (length(offspring) < pop_size && check_feasibility(children$child2, cpu_usage, memory_usage, max_cpu, max_memory)) {
+          offspring <- append(offspring, list(children$child2))
+        }
+      }
+      
+      # Convert offspring list to data frame
+      new_population <- as.data.frame(do.call(rbind, offspring[1:pop_size]))
+      
+    } else if (generation_model == "steady_state") {
+      # Steady-State Model: Replace a few individuals at a time
+      num_offsprings <- 2
+      for (i in 1:(pop_size / 2)) {
+        # Selection
+        parent1 <- tournament_selection(population, fitness, tournament_size)
+        parent2 <- tournament_selection(population, fitness, tournament_size)
+        
+        # Crossover
+        if (runif(1) < crossover_rate) {
+          if (crossover_type == "n_point") {
+            children <- n_point_crossover(as.numeric(parent1), as.numeric(parent2), n_points = 2)
+          } else if (crossover_type == "single_point") {
+            children <- single_point_crossover(as.numeric(parent1), as.numeric(parent2))
+          } else if (crossover_type == "uniform") {
+            children <- uniform_crossover(as.numeric(parent1), as.numeric(parent2), swap_prob = 0.5)
+          } else if (crossover_type == "order_based") {
+            children <- order_based_crossover(as.numeric(parent1), as.numeric(parent2))
+          } else if (crossover_type == "pmx") {
+            children <- pmx_crossover(as.numeric(parent1), as.numeric(parent2))
+          } else {
+            # Default to no crossover
+            children <- list(child1 = as.numeric(parent1), child2 = as.numeric(parent2))
+          }
+        } else {
+          children <- list(child1 = as.numeric(parent1), child2 = as.numeric(parent2))
+        }
+        
+        # Mutation
+        if (mutation_type == "swap") {
+          children$child1 <- random_swap_mutation(children$child1, mutation_rate)
+          children$child2 <- random_swap_mutation(children$child2, mutation_rate)
+        } else if (mutation_type == "inversion") {
+          children$child1 <- inversion_mutation(children$child1, mutation_rate)
+          children$child2 <- inversion_mutation(children$child2, mutation_rate)
+        } else if (mutation_type == "scramble") {
+          children$child1 <- scramble_mutation(children$child1, mutation_rate)
+          children$child2 <- scramble_mutation(children$child2, mutation_rate)
+        } else if (mutation_type == "insert") {
+          children$child1 <- insert_mutation(children$child1, mutation_rate)
+          children$child2 <- insert_mutation(children$child2, mutation_rate)
+        }
+        
+        # Replace the worst individuals with the new children
+        for (child in list(children$child1, children$child2)) {
+          if (check_feasibility(child, cpu_usage, memory_usage, max_cpu, max_memory)) {
+            child_obj <- objective_function(child, weight_energy, weight_time, energy_efficiency, execution_time)
+            # Find the worst individual
+            worst_index <- which.max(fitness)
+            if (child_obj < fitness[worst_index]) {
+              population[worst_index, ] <- child
+              fitness[worst_index] <- child_obj
+              # Update best solution
+              if (child_obj < best_fitness) {
+                best_fitness <- child_obj
+                best_solution <- population[worst_index, ]
+              }
+            }
+          }
+        }
+      }
+      new_population <- population
+    }
+    
+    # Evaluate fitness of the new population
+    fitness <- apply(new_population, 1, function(sol) {
+      obj <- objective_function(as.numeric(sol), weight_energy, weight_time, energy_efficiency, execution_time)
+      return(obj)
+    })
+    
+    # Update best solution
+    current_best_fitness <- min(fitness)
+    current_best_solution <- new_population[which.min(fitness), ]
+    if (current_best_fitness < best_fitness) {
+      best_fitness <- current_best_fitness
+      best_solution <- current_best_solution
+    }
+    
+    best_fitness_history[gen] <- best_fitness
+    
+    # Update population
+    population <- new_population
+  }
+  
+  return(list(
+    best_solution = best_solution,
+    best_fitness = best_fitness,
+    fitness_history = best_fitness_history
+  ))
+}
+```
+
+
+```{r}
+# Example usage
+
+energy_efficiency <- vm_cloud_clean_analysis$energy_efficiency
+execution_time <- vm_cloud_clean_analysis$execution_time
+cpu_usage <- vm_cloud_clean_analysis$cpu_usage
+memory_usage <- vm_cloud_clean_analysis$memory_usage
+
+# GA Parameters
+weight_energy <- 0.5
+weight_time <- 0.5
+max_cpu <- 0.8  # Max CPU usage allowed
+max_memory <- 0.8  # Max memory usage allowed
+pop_size <- 100
+num_generations <- 5
+crossover_rate <- 0.8
+mutation_rate <- 0.01
+tournament_size <- 3
+crossover_type <- "single_point"  # Choose among "n_point", "single_point", "uniform", "order_based", "pmx"
+mutation_type <- "swap"            # Choose among "swap", "inversion", "scramble", "insert"
+generation_model <- "generational"  # Choose between "generational", "steady_state"
+
+# Run Genetic Algorithm
+ga_result <- genetic_algorithm(
+  energy_efficiency = energy_efficiency,
+  execution_time = execution_time,
+  cpu_usage = cpu_usage,
+  memory_usage = memory_usage,
+  weight_energy = weight_energy,
+  weight_time = weight_time,
+  max_cpu = max_cpu,
+  max_memory = max_memory,
+  pop_size = pop_size,
+  num_generations = num_generations,
+  crossover_rate = crossover_rate,
+  mutation_rate = mutation_rate,
+  tournament_size = tournament_size,
+  crossover_type = crossover_type,
+  mutation_type = mutation_type,
+  generation_model = generation_model
+)
+
+# View the best solution and its objective value
+print("Best Solution:")
+print(ga_result$best_solution)
+print(paste("Best Objective Value:", ga_result$best_fitness))
+
+# Identify selected tasks
+selected_tasks <- which(as.numeric(ga_result$best_solution) == 1)
+print("Selected Tasks:")
+print(selected_tasks)
+
+# Plot fitness over generations
+plot(ga_result$fitness_history, type = "l", col = "blue",
+     xlab = "Generation", ylab = "Best Fitness",
+     main = "Fitness over Generations")
+
+```
