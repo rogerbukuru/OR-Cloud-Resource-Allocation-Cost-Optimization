@@ -1,0 +1,281 @@
+---
+title: "SimulatedAnnealing"
+author: "Roger Bukuru"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+
+# Clear workspace
+rm(list = ls())
+
+# Load data
+fileDir <- "vm_cloud_data.csv"
+vm_cloud <- read.csv(fileDir)
+
+# Select relevant columns (skip the first two columns as mentioned)
+vm_cloud <- vm_cloud[1:11000, -c(1,2)]
+
+# Step 1: One-hot encode character features
+# Identify character columns
+char_cols <- vm_cloud %>%
+  select(where(is.character))
+
+# One-hot encode using pivot_wider
+vm_cloud_encoded <- vm_cloud %>%
+  mutate(across(where(is.character), as.factor)) %>%
+  model.matrix(~ . - 1, data = .) %>%
+  as.data.frame()
+
+# Step 2: Remove rows with null values
+vm_cloud_clean <- vm_cloud_encoded %>%
+  drop_na()
+
+# Step 3: Min-Max Normalize numeric features
+min_max_normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+
+# Apply min-max normalization to numeric columns
+vm_cloud_standardized <- vm_cloud_clean %>%
+  mutate(across(where(is.numeric), ~ min_max_normalize(.)))
+
+# View the first few rows of the cleaned and normalized data
+head(vm_cloud_standardized, 10)
+
+
+# Select relevant columns for the optimization problem (after one-hot encoding and standardization)
+vm_cloud_clean_analysis <- vm_cloud_standardized %>%
+  select(cpu_usage, memory_usage, network_traffic, power_consumption,
+         num_executed_instructions, execution_time, energy_efficiency, task_priorityhigh, task_prioritylow, task_prioritymedium)
+
+# Preview the cleaned data
+head(vm_cloud_clean_analysis)
+
+```
+
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+
+# Enhanced Objective Function
+objective_function <- function(solution, energy_efficiency, execution_time, 
+                              cpu_usage, memory_usage, network_traffic, power_consumption, 
+                              max_cpu, max_memory, max_net, max_pwr, penalty_weight) {
+  # Calculate total execution time and energy efficiency
+  total_execution_time <- sum(execution_time * solution)
+  total_energy_efficiency <- sum(energy_efficiency * solution)
+  
+  # Calculate resource usage per server
+  servers <- unique(solution)
+  resource_overuse <- 0
+  for (j in servers) {
+    # Identify tasks assigned to server j
+    tasks_j <- which(solution == j)
+    
+    # Sum resources used by these tasks
+    total_cpu_j <- sum(cpu_usage[tasks_j])
+    total_memory_j <- sum(memory_usage[tasks_j])
+    total_net_j <- sum(network_traffic[tasks_j])
+    total_pwr_j <- sum(power_consumption[tasks_j])
+    
+    # Calculate overuse for each resource
+    over_cpu <- max(0, total_cpu_j - max_cpu)
+    over_mem <- max(0, total_memory_j - max_memory)
+    over_net <- max(0, total_net_j - max_net)
+    over_pwr <- max(0, total_pwr_j - max_pwr)
+    
+    # Accumulate total overuse with penalties
+    resource_overuse <- resource_overuse + (over_cpu + over_mem + over_net + over_pwr) * penalty_weight
+  }
+  
+  # Total Objective
+  # Minimize Execution Time and maximize Energy Efficiency
+  # Implemented as: alpha * Execution_Time - beta * Energy_Efficiency + Penalties
+  alpha <- 1  # Weight for Execution Time
+  beta <- 1   # Weight for Energy Efficiency
+  
+  total_objective <- alpha * total_execution_time - beta * total_energy_efficiency + resource_overuse
+  
+  return(total_objective)
+}
+
+# Generate a random neighbor by reassigning a random task to a different server
+generate_neighbor <- function(solution, num_servers) {
+  neighbor <- solution
+  task_to_change <- sample(1:length(solution), 1)
+  current_server <- solution[task_to_change]
+  # Assign to a different server
+  possible_servers <- setdiff(1:num_servers, current_server)
+  if (length(possible_servers) == 0) {
+    # Only one server exists, no change
+    return(neighbor)
+  }
+  new_server <- sample(possible_servers, 1)
+  neighbor[task_to_change] <- new_server
+  return(neighbor)
+}
+
+# Simulated Annealing Algorithm
+simulated_annealing <- function(initial_solution, energy_efficiency, execution_time, 
+                                cpu_usage, memory_usage, network_traffic, power_consumption, 
+                                max_cpu, max_memory, max_net, max_pwr, 
+                                num_servers,   # Added parameter
+                                max_iter, init_temp, cooling_rate, penalty_weight) {
+  # Initialize
+  current_solution <- initial_solution
+  best_solution <- current_solution
+  current_temp <- init_temp
+  best_objective <- objective_function(current_solution, energy_efficiency, execution_time, 
+                                      cpu_usage, memory_usage, network_traffic, power_consumption, 
+                                      max_cpu, max_memory, max_net, max_pwr, penalty_weight)
+  
+  for (i in 1:max_iter) {
+    # Generate a neighbor solution
+    neighbor <- generate_neighbor(current_solution, num_servers)  # Corrected line
+    
+    # Calculate objective value for the neighbor
+    neighbor_objective <- objective_function(neighbor, energy_efficiency, execution_time, 
+                                             cpu_usage, memory_usage, network_traffic, power_consumption, 
+                                             max_cpu, max_memory, max_net, max_pwr, penalty_weight)
+    
+    # Calculate the change in objective
+    delta_objective <- neighbor_objective - best_objective
+    
+    # Accept the neighbor if it's better or based on acceptance probability
+    if (delta_objective < 0 || runif(1) < exp(-delta_objective / current_temp)) {
+      current_solution <- neighbor
+      current_objective <- neighbor_objective
+      
+      # Update the best solution found so far
+      if (current_objective < best_objective) {
+        best_solution <- current_solution
+        best_objective <- current_objective
+      }
+    }
+    
+    # Cool down the temperature
+    current_temp <- current_temp * cooling_rate
+    
+    # Optional: Print progress every 100 iterations
+    if (i %% 100 == 0) {
+      cat("Iteration:", i, "Best Objective:", best_objective, "\n")
+    }
+  }
+  
+  return(list(best_solution = best_solution, best_objective = best_objective))
+}
+
+
+# Example usage with Enhanced Parameters
+
+# Sample data (replace this with your actual data)
+# Assuming vm_cloud_clean_analysis has columns:
+# - energy_efficiency
+# - execution_time
+# - cpu_usage
+# - memory_usage
+# - network_traffic
+# - power_consumption
+
+energy_efficiency <- vm_cloud_clean_analysis$energy_efficiency
+execution_time <- vm_cloud_clean_analysis$execution_time
+cpu_usage <- vm_cloud_clean_analysis$cpu_usage
+memory_usage <- vm_cloud_clean_analysis$memory_usage
+network_traffic <- vm_cloud_clean_analysis$network_traffic
+power_consumption <- vm_cloud_clean_analysis$power_consumption
+
+num_tasks <- length(energy_efficiency)
+num_servers <- 35  # As per your current setup
+
+# Define server capacities (adjusted as per MILP)
+max_cpu <- 80
+max_memory <- 80
+max_net <- 80
+max_pwr <- 80
+
+# Initialize a feasible solution
+# Simple heuristic: Assign each task randomly to a server
+set.seed(123)  # For reproducibility
+initial_solution <- sample(1:num_servers, num_tasks, replace = TRUE)
+
+# Define SA Parameters
+max_iter <- 20000
+init_temp <- 50
+cooling_rate <- 0.995
+penalty_weight <- 10  # Penalty for resource overuse; adjust as needed
+
+# Run simulated annealing
+result_sa <- simulated_annealing(initial_solution, energy_efficiency, execution_time, 
+                                  cpu_usage, memory_usage, network_traffic, power_consumption, 
+                                  max_cpu, max_memory, max_net, max_pwr, num_servers,
+                                  max_iter, init_temp, cooling_rate, penalty_weight)
+
+# View the best solution and its objective value
+
+print(result_sa$best_solution)
+print(paste("Best objective value:", result_sa$best_objective))
+sol = (result_sa$best_solution)
+
+
+
+# Extract Assignments
+assignments_sa <- data.frame(
+  Task_ID = 1:num_tasks,
+  Assigned_Server = result_sa$best_solution
+)
+
+# View the first few assignments
+head(assignments_sa)
+
+# Calculate total execution time and total energy efficiency
+total_execution_time_sa <- sum(execution_time * (1:num_tasks %in% 1:num_tasks))  # Simplified
+total_energy_efficiency_sa <- sum(energy_efficiency * (1:num_tasks %in% 1:num_tasks))  # Simplified
+
+# More accurate calculations based on assignments
+# Calculate resource usage per server
+resource_usage_sa <- assignments_sa %>%
+  group_by(Assigned_Server) %>%
+  summarise(
+    total_cpu = sum(cpu_usage),
+    total_memory = sum(memory_usage),
+    total_net = sum(network_traffic),
+    total_pwr = sum(power_consumption),
+    total_execution_time = sum(execution_time),
+    total_energy_efficiency = sum(energy_efficiency)
+  )
+
+# Check for resource overuse
+resource_overuse_sa <- resource_usage_sa %>%
+  mutate(
+    over_cpu = pmax(0, total_cpu - max_cpu),
+    over_mem = pmax(0, total_memory - max_memory),
+    over_net = pmax(0, total_net - max_net),
+    over_pwr = pmax(0, total_pwr - max_pwr)
+  ) %>%
+  summarise(
+    total_over_cpu = sum(over_cpu),
+    total_over_mem = sum(over_mem),
+    total_over_net = sum(over_net),
+    total_over_pwr = sum(over_pwr)
+  )
+print(resource_usage_sa)
+print(resource_overuse_sa)
+
+# Summarize total execution time and energy efficiency
+total_execution_time_sa <- sum(resource_usage_sa$total_execution_time)
+total_energy_efficiency_sa <- sum(resource_usage_sa$total_energy_efficiency)
+
+cat("Total Execution Time (SA):", total_execution_time_sa, "\n")
+cat("Total Energy Efficiency (SA):", total_energy_efficiency_sa, "\n")
+
+```

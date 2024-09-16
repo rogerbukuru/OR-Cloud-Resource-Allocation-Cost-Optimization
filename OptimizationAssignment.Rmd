@@ -64,135 +64,310 @@ head(vm_cloud_clean_analysis)
 
 ```
 
-
-
 # Linear Programming
 
-
-## Non-Priority Resource Allocation
-
 ```{r}
-
 library(Rglpk)
+#vm_cloud_clean_analysis = vm_cloud_clean_analysis[1:2000,]
+# Number of tasks and servers
+num_tasks <- nrow(vm_cloud_clean_analysis)
+num_servers <- 35  # Adjusted number of servers
 
-# Objective function: weighted sum of energy efficiency and execution time
-weight_energy <- 0.5
-weight_time <- 0.5
-obj <- weight_energy * vm_cloud_clean_analysis$energy_efficiency + weight_time * vm_cloud_clean_analysis$execution_time
+# Calculate total resource requirements
+total_cpu_required <- sum(vm_cloud_clean_analysis$cpu_usage)
+total_mem_required <- sum(vm_cloud_clean_analysis$memory_usage)
+total_net_required <- sum(vm_cloud_clean_analysis$network_traffic)
+total_pwr_required <- sum(vm_cloud_clean_analysis$power_consumption)
 
-# Number of tasks
-n_tasks <- nrow(vm_cloud_clean_analysis)  # Number of tasks
+cat("Total CPU Required:", total_cpu_required, "\n")
+cat("Total Memory Required:", total_mem_required, "\n")
+cat("Total Network Traffic Required:", total_net_required, "\n")
+cat("Total Power Consumption Required:", total_pwr_required, "\n")
 
-# Define the task assignment constraints: ensure each task is assigned exactly once
-task_assignment_constraint <- matrix(1, nrow = n_tasks, ncol = n_tasks)  # Sum over decision variables for each task
+# Server capacities (adjusted based on requirements)
+cpu_capacity <- 80
+mem_capacity <- 80
+net_capacity <- 80
+pwr_capacity <- 80
 
-# Define the constraint matrix for resource usage (CPU and memory constraints)
-constraints_matrix <- rbind(
-  vm_cloud_clean_analysis$cpu_usage,   # CPU usage constraint
-  vm_cloud_clean_analysis$memory_usage,  # Memory usage constraint
-  task_assignment_constraint  # Task assignment constraint (each task assigned once)
-)
+# Calculate total resource capacities
+total_cpu_capacity <- cpu_capacity * num_servers
+total_mem_capacity <- mem_capacity * num_servers
+total_net_capacity <- net_capacity * num_servers
+total_pwr_capacity <- pwr_capacity * num_servers
 
-# Define the constraint directions
-constraint_directions <- c("<=", "<=", rep("==", n_tasks))  # Two resource constraints, then task assignments
+cat("Total CPU Capacity:", total_cpu_capacity, "\n")
+cat("Total Memory Capacity:", total_mem_capacity, "\n")
+cat("Total Network Traffic Capacity:", total_net_capacity, "\n")
+cat("Total Power Consumption Capacity:", total_pwr_capacity, "\n")
 
-# Define the right-hand side of the constraints
-resource_limits <- c(1.5, 1.5, rep(1, n_tasks))  # Max CPU and memory usage, and exactly one task assignment per task
+# Verify if capacities are sufficient
+if (total_cpu_required > total_cpu_capacity ||
+    total_mem_required > total_mem_capacity ||
+    total_net_required > total_net_capacity ||
+    total_pwr_required > total_pwr_capacity) {
+  stop("Server capacities are insufficient. Consider increasing the number of servers or their capacities.")
+} else {
+  cat("Server capacities are sufficient.\n")
+}
 
-# Define bounds for the decision variables (binary variables)
-variable_bounds <- list(lower = rep(0, length(obj)), upper = rep(1, length(obj)))
+# Convert to matrix for easier manipulation
+tasks_matrix <- as.matrix(vm_cloud_clean_analysis)
 
-# Define variable types (binary decision variables)
-variable_types <- rep("B", length(obj))
+# Define a function to perform MILP optimization
+perform_milp_optimization <- function(objective_type = "execution_time") {
+  if (objective_type == "execution_time") {
+    # Minimize Execution Time
+    alpha <- 1
+    beta <- 0
+    obj_vector <- alpha * tasks_matrix[, "execution_time"] - beta * tasks_matrix[, "energy_efficiency"]
+  } else if (objective_type == "energy_efficiency") {
+    # Maximize Energy Efficiency (minimize negative)
+    alpha <- 0
+    beta <- 1
+    obj_vector <- alpha * tasks_matrix[, "execution_time"] - beta * tasks_matrix[, "energy_efficiency"]
+  } else {
+    stop("Invalid objective type. Choose 'execution_time' or 'energy_efficiency'.")
+  }
+  
+  # Expand the objective vector for all variables (tasks x servers)
+  objective <- rep(0, num_tasks * num_servers)
+  
+  for (i in 1:num_tasks) {
+    for (j in 1:num_servers) {
+      index <- (i - 1) * num_servers + j
+      objective[index] <- obj_vector[i]
+    }
+  }
+  
+  # Define constraints as per your code
+  # Task Assignment Constraints
+  constraint_matrix_tasks <- matrix(0, nrow = num_tasks, ncol = num_tasks * num_servers)
+  
+  for (i in 1:num_tasks) {
+    for (j in 1:num_servers) {
+      index <- (i - 1) * num_servers + j
+      constraint_matrix_tasks[i, index] <- 1
+    }
+  }
+  
+  constraint_dir_tasks <- rep("==", num_tasks)
+  constraint_rhs_tasks <- rep(1, num_tasks)
+  
+  # CPU Constraints
+  constraint_matrix_cpu <- matrix(0, nrow = num_servers, ncol = num_tasks * num_servers)
+  for (j in 1:num_servers) {
+    for (i in 1:num_tasks) {
+      index <- (i - 1) * num_servers + j
+      constraint_matrix_cpu[j, index] <- tasks_matrix[i, "cpu_usage"]
+    }
+  }
+  constraint_dir_cpu <- rep("<=", num_servers)
+  constraint_rhs_cpu <- rep(cpu_capacity, num_servers)
+  
+  # Memory Constraints
+  constraint_matrix_mem <- matrix(0, nrow = num_servers, ncol = num_tasks * num_servers)
+  for (j in 1:num_servers) {
+    for (i in 1:num_tasks) {
+      index <- (i - 1) * num_servers + j
+      constraint_matrix_mem[j, index] <- tasks_matrix[i, "memory_usage"]
+    }
+  }
+  constraint_dir_mem <- rep("<=", num_servers)
+  constraint_rhs_mem <- rep(mem_capacity, num_servers)
+  
+  # Network Traffic Constraints
+  constraint_matrix_net <- matrix(0, nrow = num_servers, ncol = num_tasks * num_servers)
+  for (j in 1:num_servers) {
+    for (i in 1:num_tasks) {
+      index <- (i - 1) * num_servers + j
+      constraint_matrix_net[j, index] <- tasks_matrix[i, "network_traffic"]
+    }
+  }
+  constraint_dir_net <- rep("<=", num_servers)
+  constraint_rhs_net <- rep(net_capacity, num_servers)
+  
+  # Power Consumption Constraints
+  constraint_matrix_pwr <- matrix(0, nrow = num_servers, ncol = num_tasks * num_servers)
+  for (j in 1:num_servers) {
+    for (i in 1:num_tasks) {
+      index <- (i - 1) * num_servers + j
+      constraint_matrix_pwr[j, index] <- tasks_matrix[i, "power_consumption"]
+    }
+  }
+  constraint_dir_pwr <- rep("<=", num_servers)
+  constraint_rhs_pwr <- rep(pwr_capacity, num_servers)
+  
+  # Combine all constraints
+  constraint_matrix <- rbind(
+    constraint_matrix_tasks,
+    constraint_matrix_cpu,
+    constraint_matrix_mem,
+    constraint_matrix_net,
+    constraint_matrix_pwr
+  )
+  
+  constraint_dir <- c(
+    constraint_dir_tasks,
+    constraint_dir_cpu,
+    constraint_dir_mem,
+    constraint_dir_net,
+    constraint_dir_pwr
+  )
+  
+  constraint_rhs <- c(
+    constraint_rhs_tasks,
+    constraint_rhs_cpu,
+    constraint_rhs_mem,
+    constraint_rhs_net,
+    constraint_rhs_pwr
+  )
+  
+  # Define variable types (all binary)
+  var_types <- rep("B", num_tasks * num_servers)
+  
+  # Define the MILP model
+  milp_model <- list(
+    obj = objective,
+    mat = constraint_matrix,
+    dir = constraint_dir,
+    rhs = constraint_rhs
+  )
+  
+  # Solve the MILP model using Rglpk
+  solution <- Rglpk_solve_LP(
+    obj = milp_model$obj,
+    mat = milp_model$mat,
+    dir = milp_model$dir,
+    rhs = milp_model$rhs,
+    types = var_types,
+    max = FALSE  # Since we're minimizing
+  )
+  
+  return(solution)
+}
 
-# Solve the MIP for minimizing energy efficiency and execution time
-solution <- Rglpk_solve_LP(obj = obj,
-                           mat = constraints_matrix,
-                           dir = constraint_directions,
-                           rhs = resource_limits,
-                           bounds = variable_bounds,
-                           types = variable_types,
-                           max = FALSE)
 
-# Display the solution for energy efficiency and execution time
-solution_values <- solution$solution
-optimal_value <- solution$optimum
-
-# View the solution
-print(solution_values)
-print(paste("Optimal value:", optimal_value))
-
-which(solution_values == 1)
 ```
 
-## Priority Resource Allocation
+
 
 ```{r}
+# Perform optimization to minimize Execution Time
+solution_time <- perform_milp_optimization(objective_type = "execution_time")
 
-# Define the weights for each priority level
-priority_high_weight <- 3
-priority_medium_weight <- 2
-priority_low_weight <- 1
+# Check the status for Execution Time optimization
+if (solution_time$status == 0) {
+  cat("Optimal solution for Execution Time minimization found.\n")
+} else {
+  cat("No optimal solution for Execution Time minimization found. Status code:", solution_time$status, "\n")
+}
 
-# Calculate the priority weight for each task by combining the priority columns
-priority_weights <- priority_high_weight * vm_cloud_clean_analysis$task_priorityhigh +
-                    priority_medium_weight * vm_cloud_clean_analysis$task_prioritymedium +
-                    priority_low_weight * vm_cloud_clean_analysis$task_prioritylow
+# Interpret Execution Time Optimization Solution
+if (solution_time$status == 0 || solution_time$status == 1) {
+  # Extract the solution vector
+  solution_vector_time <- solution_time$solution
+  
+  # Initialize an assignment matrix
+  assignment_matrix_time <- matrix(0, nrow = num_tasks, ncol = num_servers)
+  
+  for (i in 1:num_tasks) {
+    for (j in 1:num_servers) {
+      index <- (i - 1) * num_servers + j
+      assignment_matrix_time[i, j] <- solution_vector_time[index]
+    }
+  }
+  
+  # Verify assignments
+  row_sums_time <- rowSums(assignment_matrix_time)
+  if (all(row_sums_time == 1)) {
+    cat("All tasks are assigned to exactly one server for Execution Time minimization.\n")
+  } else {
+    cat("Some tasks are not properly assigned in Execution Time minimization.\n")
+    num_unassigned_time <- sum(row_sums_time == 0)
+    cat("Number of unassigned tasks:", num_unassigned_time, "\n")
+  }
+  
+  # Create a data frame for assignments
+  assignments_time <- data.frame(
+    Task_ID = 1:num_tasks,
+    Assigned_Server = apply(assignment_matrix_time, 1, function(x) which(x == 1))
+  )
+  
+  # Assign NA to unassigned tasks
+  assignments_time$Assigned_Server[row_sums_time != 1] <- NA
+  
+  # View first few assignments
+  head(assignments_time)
+  
+  # Calculate total execution time and energy efficiency
+  total_execution_time_time <- sum(tasks_matrix[, "execution_time"] * row_sums_time)
+  total_energy_efficiency_time <- sum(tasks_matrix[, "energy_efficiency"] * row_sums_time)
+  
+  cat("Total Execution Time (Minimized):", total_execution_time_time, "\n")
+  cat("Total Energy Efficiency (Minimized):", total_energy_efficiency_time, "\n")
+}
 
-# Normalize the priority weights to ensure they are proportional (optional)
-priority_weights <- priority_weights / max(priority_weights)
-
-# Objective function: weighted sum of energy efficiency and execution time, with priority weighting
-weight_energy <- 0.5
-weight_time <- 0.5
-
-# Adjust the objective function to prioritize tasks based on their priority levels
-obj <- priority_weights * (weight_energy * vm_cloud_clean_analysis$energy_efficiency + 
-                           weight_time * vm_cloud_clean_analysis$execution_time)
-
-# Number of tasks
-n_tasks <- nrow(vm_cloud_clean_analysis)  # Number of tasks
-
-# Define the task assignment constraints: ensure each task is assigned exactly once
-task_assignment_constraint <- matrix(1, nrow = n_tasks, ncol = n_tasks)  # Sum over decision variables for each task
-
-# Define the constraint matrix for resource usage (CPU and memory constraints)
-constraints_matrix <- rbind(
-  vm_cloud_clean_analysis$cpu_usage,   # CPU usage constraint
-  vm_cloud_clean_analysis$memory_usage,  # Memory usage constraint
-  task_assignment_constraint  # Task assignment constraint (each task assigned once)
-)
-
-# Define the constraint directions
-constraint_directions <- c("<=", "<=", rep("==", n_tasks))  # Two resource constraints, then task assignments
-
-# Define the right-hand side of the constraints
-resource_limits <- c(5.0, 5.0, rep(1, n_tasks))  # Max CPU and memory usage, and exactly one task assignment per task
-
-# Define bounds for the decision variables (binary variables)
-variable_bounds <- list(lower = rep(0, length(obj)), upper = rep(1, length(obj)))
-
-# Define variable types (binary decision variables)
-variable_types <- rep("B", length(obj))
-
-# Solve the MILP for minimizing energy efficiency and execution time with task prioritization
-solution <- Rglpk_solve_LP(obj = obj,
-                           mat = constraints_matrix,
-                           dir = constraint_directions,
-                           rhs = resource_limits,
-                           bounds = variable_bounds,
-                           types = variable_types,
-                           max = FALSE)
-
-# Display the solution for energy efficiency and execution time
-solution_values <- solution$solution
-optimal_value <- solution$optimum
-
-# View the solution
-print(solution_values)
-print(paste("Optimal value:", optimal_value))
+```
 
 
+
+
+```{r}
+# Perform optimization to maximize Energy Efficiency (minimize -Energy Efficiency)
+solution_energy <- perform_milp_optimization(objective_type = "energy_efficiency")
+
+# Check the status for Energy Efficiency optimization
+if (solution_energy$status == 0) {
+  cat("Optimal solution for Energy Efficiency maximization found.\n")
+} else {
+  cat("No optimal solution for Energy Efficiency maximization found. Status code:", solution_energy$status, "\n")
+}
+
+# Interpret Energy Efficiency Optimization Solution
+if (solution_energy$status == 0 || solution_energy$status == 1) {
+  # Extract the solution vector
+  solution_vector_energy <- solution_energy$solution
+  
+  # Initialize an assignment matrix
+  assignment_matrix_energy <- matrix(0, nrow = num_tasks, ncol = num_servers)
+  
+  for (i in 1:num_tasks) {
+    for (j in 1:num_servers) {
+      index <- (i - 1) * num_servers + j
+      assignment_matrix_energy[i, j] <- solution_vector_energy[index]
+    }
+  }
+  
+  # Verify assignments
+  row_sums_energy <- rowSums(assignment_matrix_energy)
+  if (all(row_sums_energy == 1)) {
+    cat("All tasks are assigned to exactly one server for Energy Efficiency maximization.\n")
+  } else {
+    cat("Some tasks are not properly assigned in Energy Efficiency maximization.\n")
+    num_unassigned_energy <- sum(row_sums_energy == 0)
+    cat("Number of unassigned tasks:", num_unassigned_energy, "\n")
+  }
+  
+  # Create a data frame for assignments
+  assignments_energy <- data.frame(
+    Task_ID = 1:num_tasks,
+    Assigned_Server = apply(assignment_matrix_energy, 1, function(x) which(x == 1))
+  )
+  
+  # Assign NA to unassigned tasks
+  assignments_energy$Assigned_Server[row_sums_energy != 1] <- NA
+  
+  # View first few assignments
+  head(assignments_energy)
+  
+  # Calculate total execution time and energy efficiency
+  total_execution_time_energy <- sum(tasks_matrix[, "execution_time"] * row_sums_energy)
+  total_energy_efficiency_energy <- sum(tasks_matrix[, "energy_efficiency"] * row_sums_energy)
+  
+  cat("Total Execution Time (Minimized):", total_execution_time_energy, "\n")
+  cat("Total Energy Efficiency (Maximized):", total_energy_efficiency_energy, "\n")
+}
 ```
 
 
