@@ -67,7 +67,7 @@ head(vm_cloud_clean_analysis)
 # Load necessary libraries
 library(tidyverse)
 
-# Enhanced Objective Function
+# Enhanced Objective Function (unchanged)
 objective_function <- function(solution, energy_efficiency, execution_time, 
                               cpu_usage, memory_usage, network_traffic, power_consumption, 
                               max_cpu, max_memory, max_net, max_pwr, penalty_weight) {
@@ -109,7 +109,7 @@ objective_function <- function(solution, energy_efficiency, execution_time,
   return(total_objective)
 }
 
-# Generate a random neighbor by reassigning a random task to a different server
+# Generate a random neighbor by reassigning a random task to a different server (unchanged)
 generate_neighbor <- function(solution, num_servers) {
   neighbor <- solution
   task_to_change <- sample(1:length(solution), 1)
@@ -125,7 +125,7 @@ generate_neighbor <- function(solution, num_servers) {
   return(neighbor)
 }
 
-# Simulated Annealing Algorithm
+# Simulated Annealing Algorithm with Objective History Tracking
 simulated_annealing <- function(initial_solution, energy_efficiency, execution_time, 
                                 cpu_usage, memory_usage, network_traffic, power_consumption, 
                                 max_cpu, max_memory, max_net, max_pwr, 
@@ -139,9 +139,13 @@ simulated_annealing <- function(initial_solution, energy_efficiency, execution_t
                                       cpu_usage, memory_usage, network_traffic, power_consumption, 
                                       max_cpu, max_memory, max_net, max_pwr, penalty_weight)
   
-  for (i in 1:max_iter) {
+  # Initialize a vector to store the best objective value at each iteration
+  objective_history <- numeric(max_iter)
+  objective_history[1] <- best_objective
+  
+  for (i in 2:max_iter) {
     # Generate a neighbor solution
-    neighbor <- generate_neighbor(current_solution, num_servers)  # Corrected line
+    neighbor <- generate_neighbor(current_solution, num_servers)
     
     # Calculate objective value for the neighbor
     neighbor_objective <- objective_function(neighbor, energy_efficiency, execution_time, 
@@ -163,6 +167,9 @@ simulated_annealing <- function(initial_solution, energy_efficiency, execution_t
       }
     }
     
+    # Store the best objective so far
+    objective_history[i] <- best_objective
+    
     # Cool down the temperature
     current_temp <- current_temp * cooling_rate
     
@@ -172,10 +179,14 @@ simulated_annealing <- function(initial_solution, energy_efficiency, execution_t
     }
   }
   
-  return(list(best_solution = best_solution, best_objective = best_objective))
+  return(list(best_solution = best_solution, best_objective = best_objective, objective_history = objective_history))
 }
 
 
+```
+
+
+```{r}
 # Example usage with Enhanced Parameters
 
 # Sample data (replace this with your actual data)
@@ -209,7 +220,7 @@ set.seed(123)  # For reproducibility
 initial_solution <- sample(1:num_servers, num_tasks, replace = TRUE)
 
 # Define SA Parameters
-max_iter <- 20000
+max_iter <- 10000
 init_temp <- 50
 cooling_rate <- 0.995
 penalty_weight <- 10  # Penalty for resource overuse; adjust as needed
@@ -221,61 +232,71 @@ result_sa <- simulated_annealing(initial_solution, energy_efficiency, execution_
                                   max_iter, init_temp, cooling_rate, penalty_weight)
 
 # View the best solution and its objective value
-
 print(result_sa$best_solution)
 print(paste("Best objective value:", result_sa$best_objective))
-sol = (result_sa$best_solution)
 
 
+```
 
-# Extract Assignments
-assignments_sa <- data.frame(
-  Task_ID = 1:num_tasks,
-  Assigned_Server = result_sa$best_solution
+
+```{r}
+# Plot Objective Function Convergence
+library(ggplot2)
+
+# Create a data frame for plotting
+objective_df <- data.frame(
+  Iteration = 1:max_iter,
+  Objective_Value = result_sa$objective_history
 )
 
-# View the first few assignments
-head(assignments_sa)
+# Plot using ggplot2
+ggplot(objective_df, aes(x = Iteration, y = Objective_Value)) +
+  geom_line(color = "blue") +
+  labs(title = "Objective Function Convergence Over Iterations",
+       x = "Iteration",
+       y = "Objective Function Value") +
+  theme_minimal()
 
-# Calculate total execution time and total energy efficiency
-total_execution_time_sa <- sum(execution_time * (1:num_tasks %in% 1:num_tasks))  # Simplified
-total_energy_efficiency_sa <- sum(energy_efficiency * (1:num_tasks %in% 1:num_tasks))  # Simplified
+```
 
-# More accurate calculations based on assignments
-# Calculate resource usage per server
-resource_usage_sa <- assignments_sa %>%
+
+```{r}
+# Aggregate the number of tasks per server
+task_counts <- assignments_sa %>%
   group_by(Assigned_Server) %>%
-  summarise(
-    total_cpu = sum(cpu_usage),
-    total_memory = sum(memory_usage),
-    total_net = sum(network_traffic),
-    total_pwr = sum(power_consumption),
-    total_execution_time = sum(execution_time),
-    total_energy_efficiency = sum(energy_efficiency)
-  )
+  summarise(Num_Tasks = n())
 
-# Check for resource overuse
-resource_overuse_sa <- resource_usage_sa %>%
-  mutate(
-    over_cpu = pmax(0, total_cpu - max_cpu),
-    over_mem = pmax(0, total_memory - max_memory),
-    over_net = pmax(0, total_net - max_net),
-    over_pwr = pmax(0, total_pwr - max_pwr)
-  ) %>%
-  summarise(
-    total_over_cpu = sum(over_cpu),
-    total_over_mem = sum(over_mem),
-    total_over_net = sum(over_net),
-    total_over_pwr = sum(over_pwr)
-  )
-print(resource_usage_sa)
-print(resource_overuse_sa)
+# Ensure all servers are represented
+task_counts <- task_counts %>%
+  complete(Assigned_Server = 1:num_servers, fill = list(Num_Tasks = 0))
 
-# Summarize total execution time and energy efficiency
-total_execution_time_sa <- sum(resource_usage_sa$total_execution_time)
-total_energy_efficiency_sa <- sum(resource_usage_sa$total_energy_efficiency)
 
-cat("Total Execution Time (SA):", total_execution_time_sa, "\n")
-cat("Total Energy Efficiency (SA):", total_energy_efficiency_sa, "\n")
+# Create a heatmap for Task Assignments
+ggplot(task_counts, aes(x = factor(1), y = factor(Assigned_Server), fill = Num_Tasks)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(title = "Task Assignments Heatmap",
+       x = "",
+       y = "Server ID",
+       fill = "Number of Tasks") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+# Aggregate the number of tasks per server
+task_counts_sa <- assignments_sa %>%
+  filter(!is.na(Assigned_Server)) %>%  # Exclude any unassigned tasks, if any
+  group_by(Assigned_Server) %>%
+  summarise(Num_Tasks = n()) %>%
+  complete(Assigned_Server = 1:num_servers, fill = list(Num_Tasks = 0))  # Ensure all servers are represented
+
+# Create a bar plot for Task Distribution in Simulated Annealing
+ggplot(task_counts_sa, aes(x = factor(Assigned_Server), y = Num_Tasks)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Number of Tasks Assigned to Each Server (Simulated Annealing)",
+       x = "Server ID",
+       y = "Number of Tasks") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))  # Rotate x-axis labels if needed
 
 ```

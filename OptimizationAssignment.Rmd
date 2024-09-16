@@ -68,7 +68,7 @@ head(vm_cloud_clean_analysis)
 
 ```{r}
 library(Rglpk)
-#vm_cloud_clean_analysis = vm_cloud_clean_analysis[1:2000,]
+#vm_cloud_clean_analysis = vm_cloud_clean_analysis[1:1000,]
 # Number of tasks and servers
 num_tasks <- nrow(vm_cloud_clean_analysis)
 num_servers <- 35  # Adjusted number of servers
@@ -300,6 +300,11 @@ if (solution_time$status == 0 || solution_time$status == 1) {
   # View first few assignments
   head(assignments_time)
   
+  # Extract and print the objective function value
+  objective_value_time <- solution_time$optimum
+  cat("Objective Function Value (Execution Time Minimization):", objective_value_time, "\n")
+  
+  
   # Calculate total execution time and energy efficiency
   total_execution_time_time <- sum(tasks_matrix[, "execution_time"] * row_sums_time)
   total_energy_efficiency_time <- sum(tasks_matrix[, "energy_efficiency"] * row_sums_time)
@@ -309,7 +314,38 @@ if (solution_time$status == 0 || solution_time$status == 1) {
 }
 
 ```
+```{r}
+# Load necessary library
+library(ggplot2)
 
+# Aggregate the number of tasks per server
+task_counts_time <- assignments_time %>%
+  filter(!is.na(Assigned_Server)) %>%  # Exclude unassigned tasks
+  group_by(Assigned_Server) %>%
+  summarise(Num_Tasks = n()) %>%
+  complete(Assigned_Server = 1:num_servers, fill = list(Num_Tasks = 0))
+
+# Plot Task Assignment Heatmap
+ggplot(task_counts_time, aes(x = factor(1), y = factor(Assigned_Server), fill = Num_Tasks)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(title = "Task Assignments Heatmap (MILP - Execution Time Minimization)",
+       x = "",
+       y = "Server ID",
+       fill = "Number of Tasks") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+# Bar Plot for Task Distribution
+ggplot(task_counts_time, aes(x = factor(Assigned_Server), y = Num_Tasks)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Number of Tasks Assigned to Each Server (MILP - Execution Time Minimization)",
+       x = "Server ID",
+       y = "Number of Tasks") +
+  theme_minimal()
+
+```
 
 
 
@@ -361,6 +397,10 @@ if (solution_energy$status == 0 || solution_energy$status == 1) {
   # View first few assignments
   head(assignments_energy)
   
+    # Extract and print the objective function value
+  objective_value_time <- solution_time$optimum
+  cat("Objective Function Value (Execution Time Minimization):", objective_value_time, "\n")
+  
   # Calculate total execution time and energy efficiency
   total_execution_time_energy <- sum(tasks_matrix[, "execution_time"] * row_sums_energy)
   total_energy_efficiency_energy <- sum(tasks_matrix[, "energy_efficiency"] * row_sums_energy)
@@ -369,7 +409,37 @@ if (solution_energy$status == 0 || solution_energy$status == 1) {
   cat("Total Energy Efficiency (Maximized):", total_energy_efficiency_energy, "\n")
 }
 ```
+```{r}
+library(ggplot2)
 
+# Aggregate the number of tasks per server
+task_counts_time <- assignments_time %>%
+  filter(!is.na(Assigned_Server)) %>%  # Exclude unassigned tasks
+  group_by(Assigned_Server) %>%
+  summarise(Num_Tasks = n()) %>%
+  complete(Assigned_Server = 1:num_servers, fill = list(Num_Tasks = 0))
+
+# Plot Task Assignment Heatmap
+ggplot(task_counts_time, aes(x = factor(1), y = factor(Assigned_Server), fill = Num_Tasks)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(title = "Task Assignments Heatmap (MILP - Energy Efficiency Maximization)",
+       x = "",
+       y = "Server ID",
+       fill = "Number of Tasks") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+# Bar Plot for Task Distribution
+ggplot(task_counts_time, aes(x = factor(Assigned_Server), y = Num_Tasks)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Number of Tasks Assigned to Each Server (MILP - Execution Time Minimization)",
+       x = "Server ID",
+       y = "Number of Tasks") +
+  theme_minimal()
+
+```
 
 # Simulated Annealing
 
