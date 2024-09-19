@@ -261,6 +261,17 @@ ggplot(objective_df, aes(x = Iteration, y = Objective_Value)) +
 
 
 ```{r}
+# Assuming 'result_sa$best_solution' contains the server assignments for each task
+
+# Create a data frame for task assignments
+assignments_sa <- data.frame(
+  Task_ID = 1:num_tasks,
+  Assigned_Server = result_sa$best_solution
+)
+
+# View the first few assignments (optional)
+head(assignments_sa)
+
 # Aggregate the number of tasks per server
 task_counts <- assignments_sa %>%
   group_by(Assigned_Server) %>%
