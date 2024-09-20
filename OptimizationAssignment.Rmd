@@ -434,7 +434,7 @@ ggplot(task_counts_time, aes(x = factor(1), y = factor(Assigned_Server), fill = 
 # Bar Plot for Task Distribution
 ggplot(task_counts_time, aes(x = factor(Assigned_Server), y = Num_Tasks)) +
   geom_bar(stat = "identity", fill = "steelblue") +
-  labs(title = "Number of Tasks Assigned to Each Server (MILP - Execution Time Minimization)",
+  labs(title = "Number of Tasks Assigned to Each Server (MILP - Energy Efficiency Maximization)",
        x = "Server ID",
        y = "Number of Tasks") +
   theme_minimal()

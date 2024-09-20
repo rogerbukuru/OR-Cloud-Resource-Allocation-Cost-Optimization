@@ -220,7 +220,7 @@ set.seed(123)  # For reproducibility
 initial_solution <- sample(1:num_servers, num_tasks, replace = TRUE)
 
 # Define SA Parameters
-max_iter <- 10000
+max_iter <- 100000
 init_temp <- 50
 cooling_rate <- 0.995
 penalty_weight <- 10  # Penalty for resource overuse; adjust as needed
@@ -304,7 +304,7 @@ task_counts_sa <- assignments_sa %>%
 # Create a bar plot for Task Distribution in Simulated Annealing
 ggplot(task_counts_sa, aes(x = factor(Assigned_Server), y = Num_Tasks)) +
   geom_bar(stat = "identity", fill = "steelblue") +
-  labs(title = "Number of Tasks Assigned to Each Server (Simulated Annealing)",
+  labs(title = "Number of Tasks Assigned to Each Server",
        x = "Server ID",
        y = "Number of Tasks") +
   theme_minimal() +
