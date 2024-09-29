@@ -85,8 +85,8 @@ archemedian_goal_programming <- function(data, weights, max_cpu, max_memory, max
   obj_coeff <- rep(0, num_tasks * num_servers)
   
   for (j in 1:num_servers) {
-    obj_coeff[((j - 1) * num_tasks + 1):(j * num_tasks)] <- weights["energy"] * data$energy_efficiency + 
-                                                                 weights["time"] * data$execution_time
+    obj_coeff[((j - 1) * num_tasks + 1):(j * num_tasks)] <- weights["time"] * data$execution_time -weights["energy"] * data$energy_efficiency
+                                                                 
   }
   
   # Constraints

@@ -1,5 +1,5 @@
 ---
-title: "Cloud Resource Allocation and Cost Optimization"
+title: "Mixed Integer Linear Programming (MILP)"
 author: "Roger Bukuru"
 date: '`r Sys.Date()`'
 output: html_document
@@ -12,48 +12,38 @@ knitr::opts_chunk$set(echo = TRUE)
 # Data Cleaning
 
 ```{r}
-# Load necessary libraries
 library(tidyverse)
-
-# Clear workspace
 rm(list = ls())
 
-# Load data
 fileDir <- "vm_cloud_data.csv"
 vm_cloud <- read.csv(fileDir)
 
-# Select relevant columns (skip the first two columns as mentioned)
 vm_cloud <- vm_cloud[1:11000, -c(1,2)]
 
-# Step 1: One-hot encode character features
-# Identify character columns
+# One-hot encode character features
 char_cols <- vm_cloud %>%
   select(where(is.character))
 
-# One-hot encode using pivot_wider
 vm_cloud_encoded <- vm_cloud %>%
   mutate(across(where(is.character), as.factor)) %>%
   model.matrix(~ . - 1, data = .) %>%
   as.data.frame()
 
-# Step 2: Remove rows with null values
+# Remove rows with null values
 vm_cloud_clean <- vm_cloud_encoded %>%
   drop_na()
 
-# Step 3: Min-Max Normalize numeric features
+# Min-Max Normalize numeric features
 min_max_normalize <- function(x) {
   return ((x - min(x)) / (max(x) - min(x)))
 }
 
-# Apply min-max normalization to numeric columns
 vm_cloud_standardized <- vm_cloud_clean %>%
   mutate(across(where(is.numeric), ~ min_max_normalize(.)))
 
-# View the first few rows of the cleaned and normalized data
 head(vm_cloud_standardized, 10)
 
 
-# Select relevant columns for the optimization problem (after one-hot encoding and standardization)
 vm_cloud_clean_analysis <- vm_cloud_standardized %>%
   select(cpu_usage, memory_usage, network_traffic, power_consumption,
          num_executed_instructions, execution_time, energy_efficiency, task_priorityhigh, task_prioritylow, task_prioritymedium)
@@ -61,17 +51,17 @@ vm_cloud_clean_analysis <- vm_cloud_standardized %>%
 # Preview the cleaned data
 head(vm_cloud_clean_analysis)
 
-
 ```
+
 
 # Linear Programming
 
 ```{r}
 library(Rglpk)
-#vm_cloud_clean_analysis = vm_cloud_clean_analysis[1:1000,]
+library(ggplot2)
 # Number of tasks and servers
 num_tasks <- nrow(vm_cloud_clean_analysis)
-num_servers <- 35  # Adjusted number of servers
+num_servers <- 35
 
 # Calculate total resource requirements
 total_cpu_required <- sum(vm_cloud_clean_analysis$cpu_usage)
@@ -84,13 +74,13 @@ cat("Total Memory Required:", total_mem_required, "\n")
 cat("Total Network Traffic Required:", total_net_required, "\n")
 cat("Total Power Consumption Required:", total_pwr_required, "\n")
 
-# Server capacities (adjusted based on requirements)
+# Server capacities
 cpu_capacity <- 80
 mem_capacity <- 80
 net_capacity <- 80
 pwr_capacity <- 80
 
-# Calculate total resource capacities
+# Total resource capacities
 total_cpu_capacity <- cpu_capacity * num_servers
 total_mem_capacity <- mem_capacity * num_servers
 total_net_capacity <- net_capacity * num_servers
@@ -111,10 +101,8 @@ if (total_cpu_required > total_cpu_capacity ||
   cat("Server capacities are sufficient.\n")
 }
 
-# Convert to matrix for easier manipulation
 tasks_matrix <- as.matrix(vm_cloud_clean_analysis)
 
-# Define a function to perform MILP optimization
 perform_milp_optimization <- function(objective_type = "execution_time") {
   if (objective_type == "execution_time") {
     # Minimize Execution Time
@@ -130,7 +118,6 @@ perform_milp_optimization <- function(objective_type = "execution_time") {
     stop("Invalid objective type. Choose 'execution_time' or 'energy_efficiency'.")
   }
   
-  # Expand the objective vector for all variables (tasks x servers)
   objective <- rep(0, num_tasks * num_servers)
   
   for (i in 1:num_tasks) {
@@ -140,7 +127,6 @@ perform_milp_optimization <- function(objective_type = "execution_time") {
     }
   }
   
-  # Define constraints as per your code
   # Task Assignment Constraints
   constraint_matrix_tasks <- matrix(0, nrow = num_tasks, ncol = num_tasks * num_servers)
   
@@ -223,10 +209,10 @@ perform_milp_optimization <- function(objective_type = "execution_time") {
     constraint_rhs_pwr
   )
   
-  # Define variable types (all binary)
+  # Variable types (all binary)
   var_types <- rep("B", num_tasks * num_servers)
   
-  # Define the MILP model
+  # MILP model
   milp_model <- list(
     obj = objective,
     mat = constraint_matrix,
@@ -234,7 +220,7 @@ perform_milp_optimization <- function(objective_type = "execution_time") {
     rhs = constraint_rhs
   )
   
-  # Solve the MILP model using Rglpk
+  # Solve the MILP model
   solution <- Rglpk_solve_LP(
     obj = milp_model$obj,
     mat = milp_model$mat,
@@ -253,6 +239,7 @@ perform_milp_optimization <- function(objective_type = "execution_time") {
 
 
 ```{r}
+
 # Perform optimization to minimize Execution Time
 solution_time <- perform_milp_optimization(objective_type = "execution_time")
 
@@ -263,12 +250,9 @@ if (solution_time$status == 0) {
   cat("No optimal solution for Execution Time minimization found. Status code:", solution_time$status, "\n")
 }
 
-# Interpret Execution Time Optimization Solution
 if (solution_time$status == 0 || solution_time$status == 1) {
-  # Extract the solution vector
-  solution_vector_time <- solution_time$solution
   
-  # Initialize an assignment matrix
+  solution_vector_time <- solution_time$solution
   assignment_matrix_time <- matrix(0, nrow = num_tasks, ncol = num_servers)
   
   for (i in 1:num_tasks) {
@@ -288,7 +272,6 @@ if (solution_time$status == 0 || solution_time$status == 1) {
     cat("Number of unassigned tasks:", num_unassigned_time, "\n")
   }
   
-  # Create a data frame for assignments
   assignments_time <- data.frame(
     Task_ID = 1:num_tasks,
     Assigned_Server = apply(assignment_matrix_time, 1, function(x) which(x == 1))
@@ -297,16 +280,12 @@ if (solution_time$status == 0 || solution_time$status == 1) {
   # Assign NA to unassigned tasks
   assignments_time$Assigned_Server[row_sums_time != 1] <- NA
   
-  # View first few assignments
   head(assignments_time)
   
-  # Extract and print the objective function value
   objective_value_time <- solution_time$optimum
   cat("Objective Function Value (Execution Time Minimization):", objective_value_time, "\n")
   
-  
-  # Calculate total execution time and energy efficiency
-  total_execution_time_time <- sum(tasks_matrix[, "execution_time"] * row_sums_time)
+    total_execution_time_time <- sum(tasks_matrix[, "execution_time"] * row_sums_time)
   total_energy_efficiency_time <- sum(tasks_matrix[, "energy_efficiency"] * row_sums_time)
   
   cat("Total Execution Time (Minimized):", total_execution_time_time, "\n")
@@ -314,18 +293,18 @@ if (solution_time$status == 0 || solution_time$status == 1) {
 }
 
 ```
+
+
 ```{r}
-# Load necessary library
-library(ggplot2)
 
 # Aggregate the number of tasks per server
 task_counts_time <- assignments_time %>%
-  filter(!is.na(Assigned_Server)) %>%  # Exclude unassigned tasks
+  filter(!is.na(Assigned_Server)) %>%
   group_by(Assigned_Server) %>%
   summarise(Num_Tasks = n()) %>%
   complete(Assigned_Server = 1:num_servers, fill = list(Num_Tasks = 0))
 
-# Plot Task Assignment Heatmap
+# Plot assignment Heatmap
 ggplot(task_counts_time, aes(x = factor(1), y = factor(Assigned_Server), fill = Num_Tasks)) +
   geom_tile(color = "white") +
   scale_fill_gradient(low = "lightblue", high = "darkblue") +
@@ -337,7 +316,7 @@ ggplot(task_counts_time, aes(x = factor(1), y = factor(Assigned_Server), fill = 
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank())
 
-# Bar Plot for Task Distribution
+# Plot Assignment Bar Plot
 ggplot(task_counts_time, aes(x = factor(Assigned_Server), y = Num_Tasks)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   labs(title = "Number of Tasks Assigned to Each Server (MILP - Execution Time Minimization)",
@@ -350,22 +329,19 @@ ggplot(task_counts_time, aes(x = factor(Assigned_Server), y = Num_Tasks)) +
 
 
 ```{r}
+
 # Perform optimization to maximize Energy Efficiency (minimize -Energy Efficiency)
 solution_energy <- perform_milp_optimization(objective_type = "energy_efficiency")
 
-# Check the status for Energy Efficiency optimization
 if (solution_energy$status == 0) {
   cat("Optimal solution for Energy Efficiency maximization found.\n")
 } else {
   cat("No optimal solution for Energy Efficiency maximization found. Status code:", solution_energy$status, "\n")
 }
 
-# Interpret Energy Efficiency Optimization Solution
 if (solution_energy$status == 0 || solution_energy$status == 1) {
-  # Extract the solution vector
-  solution_vector_energy <- solution_energy$solution
   
-  # Initialize an assignment matrix
+  solution_vector_energy <- solution_energy$solution
   assignment_matrix_energy <- matrix(0, nrow = num_tasks, ncol = num_servers)
   
   for (i in 1:num_tasks) {
@@ -385,7 +361,6 @@ if (solution_energy$status == 0 || solution_energy$status == 1) {
     cat("Number of unassigned tasks:", num_unassigned_energy, "\n")
   }
   
-  # Create a data frame for assignments
   assignments_energy <- data.frame(
     Task_ID = 1:num_tasks,
     Assigned_Server = apply(assignment_matrix_energy, 1, function(x) which(x == 1))
@@ -394,14 +369,11 @@ if (solution_energy$status == 0 || solution_energy$status == 1) {
   # Assign NA to unassigned tasks
   assignments_energy$Assigned_Server[row_sums_energy != 1] <- NA
   
-  # View first few assignments
   head(assignments_energy)
   
-    # Extract and print the objective function value
   objective_value_time <- solution_time$optimum
   cat("Objective Function Value (Execution Time Minimization):", objective_value_time, "\n")
   
-  # Calculate total execution time and energy efficiency
   total_execution_time_energy <- sum(tasks_matrix[, "execution_time"] * row_sums_energy)
   total_energy_efficiency_energy <- sum(tasks_matrix[, "energy_efficiency"] * row_sums_energy)
   
@@ -409,17 +381,18 @@ if (solution_energy$status == 0 || solution_energy$status == 1) {
   cat("Total Energy Efficiency (Maximized):", total_energy_efficiency_energy, "\n")
 }
 ```
+
+
 ```{r}
-library(ggplot2)
 
 # Aggregate the number of tasks per server
 task_counts_time <- assignments_energy %>%
-  filter(!is.na(Assigned_Server)) %>%  # Exclude unassigned tasks
+  filter(!is.na(Assigned_Server)) %>%
   group_by(Assigned_Server) %>%
   summarise(Num_Tasks = n()) %>%
   complete(Assigned_Server = 1:num_servers, fill = list(Num_Tasks = 0))
 
-# Plot Task Assignment Heatmap
+# Plot assignment Heatmap
 ggplot(task_counts_time, aes(x = factor(1), y = factor(Assigned_Server), fill = Num_Tasks)) +
   geom_tile(color = "white") +
   scale_fill_gradient(low = "lightblue", high = "darkblue") +
@@ -431,7 +404,7 @@ ggplot(task_counts_time, aes(x = factor(1), y = factor(Assigned_Server), fill = 
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank())
 
-# Bar Plot for Task Distribution
+# Plot Assignment Bar Plot
 ggplot(task_counts_time, aes(x = factor(Assigned_Server), y = Num_Tasks)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   labs(title = "Number of Tasks Assigned to Each Server (MILP - Energy Efficiency Maximization)",
