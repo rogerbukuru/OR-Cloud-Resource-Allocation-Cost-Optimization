@@ -413,7 +413,7 @@ if (solution_energy$status == 0 || solution_energy$status == 1) {
 library(ggplot2)
 
 # Aggregate the number of tasks per server
-task_counts_time <- assignments_time %>%
+task_counts_time <- assignments_energy %>%
   filter(!is.na(Assigned_Server)) %>%  # Exclude unassigned tasks
   group_by(Assigned_Server) %>%
   summarise(Num_Tasks = n()) %>%

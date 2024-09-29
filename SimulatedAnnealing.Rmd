@@ -125,12 +125,15 @@ generate_neighbor <- function(solution, num_servers) {
   return(neighbor)
 }
 
+
 # Simulated Annealing Algorithm with Objective History Tracking
 simulated_annealing <- function(initial_solution, energy_efficiency, execution_time, 
                                 cpu_usage, memory_usage, network_traffic, power_consumption, 
                                 max_cpu, max_memory, max_net, max_pwr, 
                                 num_servers,   # Added parameter
-                                max_iter, init_temp, cooling_rate, penalty_weight) {
+                                max_iter, init_temp, cooling_type, 
+                                cooling_rate, alpha, 
+                                penalty_weight) {
   # Initialize
   current_solution <- initial_solution
   best_solution <- current_solution
@@ -170,8 +173,20 @@ simulated_annealing <- function(initial_solution, energy_efficiency, execution_t
     # Store the best objective so far
     objective_history[i] <- best_objective
     
-    # Cool down the temperature
-    current_temp <- current_temp * cooling_rate
+    # --------------------------
+    # Cooling down the temperature
+    # --------------------------
+    
+    if (cooling_type == "geometric") {
+      # Geometric Cooling Rate: Temperature decreases by multiplying with a constant factor
+      current_temp <- current_temp * (cooling_rate)^i
+    } else if (cooling_type == "logarithmic") {
+      # Logarithmic Cooling Rate: Temperature decreases based on the logarithm of the current iteration
+      # Formula: T_k = T0 / (1 + alpha * log(1 + k))
+      current_temp <- init_temp / (1 + alpha * log(1 + i))
+    } else {
+      stop("Invalid cooling_type. Choose either 'geometric' or 'logarithmic'.")
+    }
     
     # Optional: Print progress every 100 iterations
     if (i %% 100 == 0) {
@@ -179,7 +194,8 @@ simulated_annealing <- function(initial_solution, energy_efficiency, execution_t
     }
   }
   
-  return(list(best_solution = best_solution, best_objective = best_objective, objective_history = objective_history))
+  return(list(best_solution = best_solution, best_objective = best_objective, 
+              objective_history = objective_history))
 }
 
 
@@ -224,12 +240,14 @@ max_iter <- 100000
 init_temp <- 50
 cooling_rate <- 0.995
 penalty_weight <- 10  # Penalty for resource overuse; adjust as needed
+alpha = 0.5
 
 # Run simulated annealing
 result_sa <- simulated_annealing(initial_solution, energy_efficiency, execution_time, 
                                   cpu_usage, memory_usage, network_traffic, power_consumption, 
                                   max_cpu, max_memory, max_net, max_pwr, num_servers,
-                                  max_iter, init_temp, cooling_rate, penalty_weight)
+                                  max_iter, init_temp, cooling_type = "logarithmic", cooling_rate = cooling_rate, alpha = alpha,
+                                  penalty_weight)
 
 # View the best solution and its objective value
 print(result_sa$best_solution)
@@ -252,7 +270,7 @@ objective_df <- data.frame(
 # Plot using ggplot2
 ggplot(objective_df, aes(x = Iteration, y = Objective_Value)) +
   geom_line(color = "blue") +
-  labs(title = "Objective Function Convergence Over Iterations",
+  labs(title = "Objective Function Convergence Over Iterations (Geometric Cooling)",
        x = "Iteration",
        y = "Objective Function Value") +
   theme_minimal()
@@ -286,7 +304,7 @@ task_counts <- task_counts %>%
 ggplot(task_counts, aes(x = factor(1), y = factor(Assigned_Server), fill = Num_Tasks)) +
   geom_tile(color = "white") +
   scale_fill_gradient(low = "lightblue", high = "darkblue") +
-  labs(title = "Task Assignments Heatmap",
+  labs(title = "Task Assignments Heatmap (Geometric Cooling)",
        x = "",
        y = "Server ID",
        fill = "Number of Tasks") +
@@ -304,7 +322,7 @@ task_counts_sa <- assignments_sa %>%
 # Create a bar plot for Task Distribution in Simulated Annealing
 ggplot(task_counts_sa, aes(x = factor(Assigned_Server), y = Num_Tasks)) +
   geom_bar(stat = "identity", fill = "steelblue") +
-  labs(title = "Number of Tasks Assigned to Each Server",
+  labs(title = "Number of Tasks Assigned to Each Server (Geometric Cooling)",
        x = "Server ID",
        y = "Number of Tasks") +
   theme_minimal() +
