@@ -10,50 +10,41 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-# Load necessary libraries
 library(tidyverse)
-library(Rglpk)
+library(ggplot2)
+library(dplyr)
 
-
-# Clear workspace
 rm(list = ls())
 
-# Load data
 fileDir <- "vm_cloud_data.csv"
 vm_cloud <- read.csv(fileDir)
 
-# Select relevant columns (skip the first two columns as mentioned)
 vm_cloud <- vm_cloud[1:11000, -c(1,2)]
 
-# Step 1: One-hot encode character features
-# Identify character columns
+# One-hot encode character features
 char_cols <- vm_cloud %>%
   select(where(is.character))
 
-# One-hot encode using pivot_wider
 vm_cloud_encoded <- vm_cloud %>%
   mutate(across(where(is.character), as.factor)) %>%
   model.matrix(~ . - 1, data = .) %>%
   as.data.frame()
 
-# Step 2: Remove rows with null values
+# Remove rows with null values
 vm_cloud_clean <- vm_cloud_encoded %>%
   drop_na()
 
-# Step 3: Min-Max Normalize numeric features
+# Min-Max Normalize numeric features
 min_max_normalize <- function(x) {
   return ((x - min(x)) / (max(x) - min(x)))
 }
 
-# Apply min-max normalization to numeric columns
 vm_cloud_standardized <- vm_cloud_clean %>%
   mutate(across(where(is.numeric), ~ min_max_normalize(.)))
 
-# View the first few rows of the cleaned and normalized data
 head(vm_cloud_standardized, 10)
 
 
-# Select relevant columns for the optimization problem (after one-hot encoding and standardization)
 vm_cloud_clean_analysis <- vm_cloud_standardized %>%
   select(cpu_usage, memory_usage, network_traffic, power_consumption,
          num_executed_instructions, execution_time, energy_efficiency, task_priorityhigh, task_prioritylow, task_prioritymedium)
@@ -61,7 +52,6 @@ vm_cloud_clean_analysis <- vm_cloud_standardized %>%
 # Preview the cleaned data
 head(vm_cloud_clean_analysis)
 
-#vm_cloud_clean_analysis = vm_cloud_clean_analysis[1:10,]
 
 ```
 
@@ -70,11 +60,8 @@ head(vm_cloud_clean_analysis)
 ## Archemedian 
 
 ```{r}
-# Multi-Objective Goal Programming
 
 ## Archemedian 
-
-# Archemedian Method Function using Rglpk for Task-to-Server Assignment
 archemedian_goal_programming <- function(data, weights, max_cpu, max_memory, max_net, max_pwr) {
   
   # Number of tasks and servers
@@ -91,7 +78,7 @@ archemedian_goal_programming <- function(data, weights, max_cpu, max_memory, max
   
   # Constraints
   
-  ## 1. Single Assignment Constraint
+  ## Single Assignment Constraint
   constr_matrix_assign <- matrix(0, nrow = num_tasks, ncol = num_tasks * num_servers)
   
   for (i in 1:num_tasks) {
@@ -104,7 +91,7 @@ archemedian_goal_programming <- function(data, weights, max_cpu, max_memory, max
   constr_dir_assign <- rep("==", num_tasks)
   constr_rhs_assign <- rep(1, num_tasks)
   
-  ## 2. CPU Constraints per Server
+  ## CPU Constraints per Server
   constr_matrix_cpu <- matrix(0, nrow = num_servers, ncol = num_tasks * num_servers)
   
   for (j in 1:num_servers) {
@@ -117,7 +104,7 @@ archemedian_goal_programming <- function(data, weights, max_cpu, max_memory, max
   constr_dir_cpu <- rep("<=", num_servers)
   constr_rhs_cpu <- max_cpu
   
-  ## 3. Memory Constraints per Server
+  ## Memory Constraints per Server
   constr_matrix_mem <- matrix(0, nrow = num_servers, ncol = num_tasks * num_servers)
   
   for (j in 1:num_servers) {
@@ -130,7 +117,7 @@ archemedian_goal_programming <- function(data, weights, max_cpu, max_memory, max
   constr_dir_mem <- rep("<=", num_servers)
   constr_rhs_mem <- max_memory
   
-  ## 4. Network Traffic Constraints per Server
+  ## Network Traffic Constraints per Server
   constr_matrix_net <- matrix(0, nrow = num_servers, ncol = num_tasks * num_servers)
   
   for (j in 1:num_servers) {
@@ -143,7 +130,7 @@ archemedian_goal_programming <- function(data, weights, max_cpu, max_memory, max
   constr_dir_net <- rep("<=", num_servers)
   constr_rhs_net <- max_net
   
-  ## 5. Power Consumption Constraints per Server
+  ## Power Consumption Constraints per Server
   constr_matrix_pwr <- matrix(0, nrow = num_servers, ncol = num_tasks * num_servers)
   
   for (j in 1:num_servers) {
@@ -164,14 +151,14 @@ archemedian_goal_programming <- function(data, weights, max_cpu, max_memory, max
   # Variable types: Binary
   var_types <- rep("B", num_tasks * num_servers)
   
-  # Solve the MIP using Rglpk
+   # Solve
   solution <- Rglpk_solve_LP(
     obj = obj_coeff,
     mat = constr_matrix,
     dir = constr_dir,
     rhs = constr_rhs,
     types = var_types,
-    max = FALSE  # Minimization
+    max = FALSE 
   )
   
   if (solution$status == 0) {  # 0 indicates success
@@ -183,7 +170,6 @@ archemedian_goal_programming <- function(data, weights, max_cpu, max_memory, max
     )
     assigned <- assignments %>% filter(Assigned == TRUE)
     
-    # Calculate total objectives
     total_energy <- sum(data$energy_efficiency[assigned$Task_ID])
     total_time <- sum(data$execution_time[assigned$Task_ID])
     
@@ -204,9 +190,9 @@ archemedian_goal_programming <- function(data, weights, max_cpu, max_memory, max
 ## Tchebycheff 
 
 ```{r}
+
 ## Tchebycheff 
 
-# Tchebycheff Method Function using Rglpk for Task-to-Server Assignment
 tchebycheff_goal_programming <- function(data, weights, max_cpu, max_memory, max_net, max_pwr) {
   
   # Number of tasks and servers
@@ -217,7 +203,7 @@ tchebycheff_goal_programming <- function(data, weights, max_cpu, max_memory, max
   G1_ideal <- min(data$energy_efficiency)
   G2_ideal <- min(data$execution_time)
   
-  # Number of decision variables: x_i_j for tasks and servers, plus Z
+  # x_i_j for tasks and servers, plus Z
   num_variables <- num_tasks * num_servers + 1  # Last variable is Z
   
   # Objective: Minimize Z
@@ -225,7 +211,7 @@ tchebycheff_goal_programming <- function(data, weights, max_cpu, max_memory, max
   
   # Constraints
   
-  ## 1. Single Assignment Constraint
+  ## Single Assignment Constraint
   constr_matrix_assign <- matrix(0, nrow = num_tasks, ncol = num_tasks * num_servers + 1)
   
   for (i in 1:num_tasks) {
@@ -238,7 +224,7 @@ tchebycheff_goal_programming <- function(data, weights, max_cpu, max_memory, max
   constr_dir_assign <- rep("==", num_tasks)
   constr_rhs_assign <- rep(1, num_tasks)
   
-  ## 2. CPU Constraints per Server
+  ## CPU Constraints per Server
   constr_matrix_cpu <- matrix(0, nrow = num_servers, ncol = num_tasks * num_servers + 1)
   
   for (j in 1:num_servers) {
@@ -251,7 +237,7 @@ tchebycheff_goal_programming <- function(data, weights, max_cpu, max_memory, max
   constr_dir_cpu <- rep("<=", num_servers)
   constr_rhs_cpu <- max_cpu
   
-  ## 3. Memory Constraints per Server
+  ## Memory Constraints per Server
   constr_matrix_mem <- matrix(0, nrow = num_servers, ncol = num_tasks * num_servers + 1)
   
   for (j in 1:num_servers) {
@@ -264,7 +250,7 @@ tchebycheff_goal_programming <- function(data, weights, max_cpu, max_memory, max
   constr_dir_mem <- rep("<=", num_servers)
   constr_rhs_mem <- max_memory
   
-  ## 4. Network Traffic Constraints per Server
+  ## Network Traffic Constraints per Server
   constr_matrix_net <- matrix(0, nrow = num_servers, ncol = num_tasks * num_servers + 1)
   
   for (j in 1:num_servers) {
@@ -277,7 +263,7 @@ tchebycheff_goal_programming <- function(data, weights, max_cpu, max_memory, max
   constr_dir_net <- rep("<=", num_servers)
   constr_rhs_net <- max_net
   
-  ## 5. Power Consumption Constraints per Server
+  ## Power Consumption Constraints per Server
   constr_matrix_pwr <- matrix(0, nrow = num_servers, ncol = num_tasks * num_servers + 1)
   
   for (j in 1:num_servers) {
@@ -290,7 +276,7 @@ tchebycheff_goal_programming <- function(data, weights, max_cpu, max_memory, max
   constr_dir_pwr <- rep("<=", num_servers)
   constr_rhs_pwr <- max_pwr
   
-  ## 6. Tchebycheff Objective Constraints
+  ## Tchebycheff Objective Constraints
   # For each objective, Z >= weight * (ideal - sum(objective * x_i_j))
   
   # Constraint for Energy Efficiency
@@ -350,7 +336,7 @@ tchebycheff_goal_programming <- function(data, weights, max_cpu, max_memory, max
   # Variable types: Binary for x_i_j and Continuous for Z
   var_types <- c(rep("B", num_tasks * num_servers), "C")
   
-  # Solve the MIP using Rglpk
+  # Solve
   solution <- Rglpk_solve_LP(
     obj = obj_coeff,
     mat = constr_matrix,
@@ -361,7 +347,6 @@ tchebycheff_goal_programming <- function(data, weights, max_cpu, max_memory, max
   )
   
   if (solution$status == 0) {  # 0 indicates success
-    # Extract assignments
     selected_tasks <- which(solution$solution[1:(num_tasks * num_servers)] == 1)
     assignments <- data.frame(
       Task_ID = rep(1:num_tasks, times = num_servers),
@@ -370,10 +355,9 @@ tchebycheff_goal_programming <- function(data, weights, max_cpu, max_memory, max
     )
     assigned <- assignments %>% filter(Assigned == TRUE)
     
-    # Extract Z value
+    # Z value
     Z_value <- solution$solution[num_tasks * num_servers + 1]
     
-    # Calculate total objectives
     total_energy <- sum(data$energy_efficiency[assigned$Task_ID])
     total_time <- sum(data$execution_time[assigned$Task_ID])
     
@@ -392,21 +376,20 @@ tchebycheff_goal_programming <- function(data, weights, max_cpu, max_memory, max
 
 ```
 
-
+# Execute Archemedian Goal Programming
 
 ```{r}
-# Define weights for the objectives
-# Adjust weights based on the importance of each goal
+
 weights <- c(energy = 0.5, time = 0.5)  # Equal importance
 
-# Define resource constraints for each server
-num_servers <- 35  # Number of servers
-max_cpu <- rep(80, num_servers)        # Maximum CPU usage allowed per server
-max_memory <- rep(80, num_servers)     # Maximum Memory usage allowed per server
-max_net <- rep(80, num_servers)        # Maximum Network Traffic allowed per server
-max_pwr <- rep(80, num_servers)        # Maximum Power Consumption allowed per server
+# Server resource constraints (upper bounds)
+num_servers <- 35
+max_cpu <- rep(80, num_servers)     
+max_memory <- rep(80, num_servers)     
+max_net <- rep(80, num_servers) 
+max_pwr <- rep(80, num_servers)
 
-# Apply Archemedian Goal Programming
+# Execute Archemedian Goal Programming
 archemedian_result <- archemedian_goal_programming(
   data = vm_cloud_clean_analysis,
   weights = weights,
@@ -416,7 +399,7 @@ archemedian_result <- archemedian_goal_programming(
   max_pwr = max_pwr
 )
 
-# Check if a solution was found using Archemedian Method
+# Check if a solution was found
 if (!is.null(archemedian_result)) {
   cat("Archemedian Method Solution:\n")
   cat("Selected Tasks:", archemedian_result$selected_tasks, "\n")
@@ -432,8 +415,10 @@ if (!is.null(archemedian_result)) {
 ```
 
 
+# Execute Tchebycheff Goal Programming
+
 ```{r}
-# Apply Tchebycheff Goal Programming
+# Execute Tchebycheff Goal Programming
 tchebycheff_result <- tchebycheff_goal_programming(
   data = vm_cloud_clean_analysis,
   weights = weights,
@@ -443,7 +428,7 @@ tchebycheff_result <- tchebycheff_goal_programming(
   max_pwr = max_pwr
 )
 
-# Check if a solution was found using Tchebycheff Method
+# Check if a solution was found
 if (!is.null(tchebycheff_result)) {
   cat("Tchebycheff Method Solution:\n")
   cat("Selected Tasks:", tchebycheff_result$selected_tasks, "\n")
@@ -459,141 +444,17 @@ if (!is.null(tchebycheff_result)) {
 ```
 
 
+# Visualize Task Assignment Distribution
+
+
 ```{r}
-# Load necessary libraries
-library(ggplot2)
-library(dplyr)
-library(tidyr)
 
-#save(task_counts, file="taskCount.Rdata")
-#load("MOPWorkspace.Rdata")
-
-# Function to prepare task distribution data
 prepare_task_distribution <- function(result, method_name) {
   data.frame(
     Task_ID = result$selected_tasks,
     Server_ID = result$server_assignments,
     Method = method_name,
-    Assigned = 1
-  )
-}
-
-# Prepare data for both methods
-task_dist_archemedian <- prepare_task_distribution(archemedian_result, "Archemedian")
-task_dist_tchebycheff <- prepare_task_distribution(tchebycheff_result, "Tchebycheff")
-
-# Combine data
-task_distribution <- bind_rows(task_dist_archemedian, task_dist_tchebycheff)
-
-# Aggregate number of tasks per server for each method
-task_counts <- task_distribution %>%
-  group_by(Method, Server_ID) %>%
-  summarise(Num_Tasks = n()) %>%
-  ungroup()
-
-# Ensure all server-method combinations are represented
-task_counts <- task_counts %>%
-  complete(Method, Server_ID = 1:num_servers, fill = list(Num_Tasks = 0))
-
-
-# Plot Task Distribution
-ggplot(task_counts, aes(x = factor(Server_ID), y = Num_Tasks, fill = Method)) +
-  geom_bar(stat = "identity", position = "dodge") +
-  labs(title = "Task Distribution per Server",
-       x = "Server ID",
-       y = "Number of Tasks",
-       fill = "Method") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-  
-# Save the plot
-ggsave("task_distribution.png", width = 10, height = 6)
-
-
-```
-
-
-```{r}
-prepare_task_distribution <- function(result, method_name) {
-  data.frame(
-    Task_ID = result$selected_tasks,
-    Server_ID = result$server_assignments,
-    Method = method_name,
-    Assigned = 1  # Indicate assignment
-  )
-}
-
-
-# Prepare data for both methods
-task_dist_archemedian <- prepare_task_distribution(archemedian_result, "Archemedian")
-task_dist_tchebycheff <- prepare_task_distribution(tchebycheff_result, "Tchebycheff")
-
-# Combine data
-task_distribution <- bind_rows(task_dist_archemedian, task_dist_tchebycheff)
-
-# Create a complete grid of Servers and Tasks for both methods
-servers <- 1:num_servers
-tasks <- 1:nrow(vm_cloud_clean_analysis)  # Assuming one row per task
-
-# Expand the grid to include all combinations
-complete_grid <- expand.grid(
-  Method = c("Archemedian", "Tchebycheff"),
-  Server_ID = servers,
-  Task_ID = tasks
-)
-
-# Merge with the actual assignments to create a binary indicator
-heatmap_data <- complete_grid %>%
-  left_join(task_distribution, by = c("Method", "Server_ID", "Task_ID")) %>%
-  mutate(Assigned = ifelse(!is.na(Assigned), 1, 0))  # Now 'Assigned' exists
-
-
-
-# Ensure that 'Method' is a factor for better plotting
-heatmap_data$Method <- factor(heatmap_data$Method, levels = c("Archemedian", "Tchebycheff"))
-
-# Function to generate heatmap for a given method
-generate_heatmap <- function(data, method_name, output_file) {
-  ggplot(data = data %>% filter(Method == method_name), 
-         aes(x = factor(Task_ID), y = factor(Server_ID), fill = factor(Assigned))) +
-    geom_tile(color = "white") +
-    scale_fill_manual(values = c("0" = "white", "1" = "steelblue"),
-                      labels = c("Not Assigned", "Assigned")) +
-    labs(title = paste(method_name, "Method: Task Assignment Heatmap"),
-         x = "Task ID",
-         y = "Server ID",
-         fill = "Assignment Status") +
-    theme_minimal() +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
-          plot.title = element_text(hjust = 0.5))
-  
-  # Save the plot
-  ggsave(output_file, width = 12, height = 8)
-}
-
-# Generate heatmaps for both methods
-generate_heatmap(heatmap_data, "Archemedian", "heatmap_archemedian.png")
-generate_heatmap(heatmap_data, "Tchebycheff", "heatmap_tchebycheff.png")
-
-
-```
-
-
-
-
-```{r}
-# Load necessary libraries
-library(ggplot2)
-library(dplyr)
-library(tidyr)
-
-# Function to prepare task distribution data for a given method
-prepare_task_distribution <- function(result, method_name) {
-  data.frame(
-    Task_ID = result$selected_tasks,
-    Server_ID = result$server_assignments,
-    Method = method_name,
-    Assigned = 1  # Indicate assignment
+    Assigned = 1 
   )
 }
 
@@ -614,25 +475,24 @@ task_counts_mop <- task_distribution %>%
 task_counts_mop <- task_counts_mop %>%
   complete(Method, Server_ID = 1:num_servers, fill = list(Num_Tasks = 0))
 
-# Define servers and tasks
 servers <- 1:num_servers
-tasks <- 1:nrow(vm_cloud_clean_analysis)  # Assuming one row per task
+tasks <- 1:nrow(vm_cloud_clean_analysis)
 
-# Create a complete grid of all combinations
+# Complete grid of all combinations
 complete_grid <- expand.grid(
   Method = c("Archemedian", "Tchebycheff"),
   Server_ID = servers,
   Task_ID = tasks
 )
 
-# Merge with actual assignments
+# Actual assignments
 heatmap_data <- complete_grid %>%
   left_join(task_distribution, by = c("Method", "Server_ID", "Task_ID")) %>%
   mutate(Assigned = ifelse(!is.na(Assigned), 1, 0))
 
 heatmap_data$Method <- factor(heatmap_data$Method, levels = c("Archemedian", "Tchebycheff"))
 
-# Function to generate heatmap for a given method
+# Heatmap Function
 generate_heatmap_mop <- function(data, method_name, output_file) {
   # Aggregate number of tasks per server
   task_counts_mop_heatmap <- data %>%
@@ -641,7 +501,7 @@ generate_heatmap_mop <- function(data, method_name, output_file) {
     summarise(Num_Tasks = sum(Assigned)) %>%
     complete(Server_ID = 1:num_servers, fill = list(Num_Tasks = 0))
   
-  # Plot Task Assignment Heatmap
+  # Task Assignment Heatmap
   heatmap_plot <- ggplot(task_counts_mop_heatmap, aes(x = factor(1), y = factor(Server_ID), fill = Num_Tasks)) +
     geom_tile(color = "white") +
     scale_fill_gradient(low = "lightblue", high = "darkblue") +
@@ -653,19 +513,15 @@ generate_heatmap_mop <- function(data, method_name, output_file) {
     theme(axis.text.x = element_blank(),
           axis.ticks.x = element_blank(),
           plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
-  
-  # Display the heatmap
-  print(heatmap_plot)
-  
-  # Save the heatmap to the images directory
-  ggsave(output_file, plot = heatmap_plot, width = 12, height = 8)
+
+    print(heatmap_plot)
+    ggsave(output_file, plot = heatmap_plot, width = 12, height = 8)
 }
 
-# Generate heatmaps for both methods
 generate_heatmap_mop(heatmap_data, "Archemedian", "images/heatmap_archemedian_mop.png")
 generate_heatmap_mop(heatmap_data, "Tchebycheff", "images/heatmap_tchebycheff_mop.png")
 
-# Bar Plot for Task Distribution for Both Methods
+# Tasl Assignment Bar Plot
 barplot_mop <- ggplot(task_counts_mop, aes(x = factor(Server_ID), y = Num_Tasks, fill = Method)) +
   geom_bar(stat = "identity", position = position_dodge()) +
   labs(title = "Number of Tasks Assigned to Each Server (MOP Methods)",
@@ -677,10 +533,7 @@ barplot_mop <- ggplot(task_counts_mop, aes(x = factor(Server_ID), y = Num_Tasks,
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
         plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
 
-# Display the bar plot
 print(barplot_mop)
-
-# Save the bar plot
 ggsave("images/barplot_mop_methods.png", plot = barplot_mop, width = 12, height = 6)
 
 
