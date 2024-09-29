@@ -634,7 +634,8 @@ ga_result <- genetic_algorithm_ga(
 
 ```
 
-# Visualize Assignments
+
+# Visualize Task Assignment Distribution
 
 ```{r}
 

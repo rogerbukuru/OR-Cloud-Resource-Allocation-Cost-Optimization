@@ -294,8 +294,8 @@ if (solution_time$status == 0 || solution_time$status == 1) {
 
 ```
 
-# Visualize Assignments
 
+# Visualize Task Assignment Distribution
 
 ```{r}
 

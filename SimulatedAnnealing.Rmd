@@ -11,48 +11,41 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 ```{r}
-# Load necessary libraries
 library(tidyverse)
+library(ggplot2)
+library(dplyr)
 
-# Clear workspace
 rm(list = ls())
 
-# Load data
 fileDir <- "vm_cloud_data.csv"
 vm_cloud <- read.csv(fileDir)
 
-# Select relevant columns (skip the first two columns as mentioned)
 vm_cloud <- vm_cloud[1:11000, -c(1,2)]
 
-# Step 1: One-hot encode character features
-# Identify character columns
+# One-hot encode character features
 char_cols <- vm_cloud %>%
   select(where(is.character))
 
-# One-hot encode using pivot_wider
 vm_cloud_encoded <- vm_cloud %>%
   mutate(across(where(is.character), as.factor)) %>%
   model.matrix(~ . - 1, data = .) %>%
   as.data.frame()
 
-# Step 2: Remove rows with null values
+# Remove rows with null values
 vm_cloud_clean <- vm_cloud_encoded %>%
   drop_na()
 
-# Step 3: Min-Max Normalize numeric features
+# Min-Max Normalize numeric features
 min_max_normalize <- function(x) {
   return ((x - min(x)) / (max(x) - min(x)))
 }
 
-# Apply min-max normalization to numeric columns
 vm_cloud_standardized <- vm_cloud_clean %>%
   mutate(across(where(is.numeric), ~ min_max_normalize(.)))
 
-# View the first few rows of the cleaned and normalized data
 head(vm_cloud_standardized, 10)
 
 
-# Select relevant columns for the optimization problem (after one-hot encoding and standardization)
 vm_cloud_clean_analysis <- vm_cloud_standardized %>%
   select(cpu_usage, memory_usage, network_traffic, power_consumption,
          num_executed_instructions, execution_time, energy_efficiency, task_priorityhigh, task_prioritylow, task_prioritymedium)
@@ -64,10 +57,8 @@ head(vm_cloud_clean_analysis)
 
 
 ```{r}
-# Load necessary libraries
-library(tidyverse)
 
-# Enhanced Objective Function (unchanged)
+
 objective_function <- function(solution, energy_efficiency, execution_time, 
                               cpu_usage, memory_usage, network_traffic, power_consumption, 
                               max_cpu, max_memory, max_net, max_pwr, penalty_weight) {
@@ -101,15 +92,15 @@ objective_function <- function(solution, energy_efficiency, execution_time,
   # Total Objective
   # Minimize Execution Time and maximize Energy Efficiency
   # Implemented as: alpha * Execution_Time - beta * Energy_Efficiency + Penalties
-  alpha <- 1  # Weight for Execution Time
-  beta <- 1   # Weight for Energy Efficiency
+  alpha <- 0.5  # Weight for Execution Time
+  beta <- 0.5   # Weight for Energy Efficiency
   
   total_objective <- alpha * total_execution_time - beta * total_energy_efficiency + resource_overuse
   
   return(total_objective)
 }
 
-# Generate a random neighbor by reassigning a random task to a different server (unchanged)
+# Generate a random neighbor by reassigning a random task to a different server
 generate_neighbor <- function(solution, num_servers) {
   neighbor <- solution
   task_to_change <- sample(1:length(solution), 1)
@@ -125,12 +116,10 @@ generate_neighbor <- function(solution, num_servers) {
   return(neighbor)
 }
 
-
-# Simulated Annealing Algorithm with Objective History Tracking
 simulated_annealing <- function(initial_solution, energy_efficiency, execution_time, 
                                 cpu_usage, memory_usage, network_traffic, power_consumption, 
                                 max_cpu, max_memory, max_net, max_pwr, 
-                                num_servers,   # Added parameter
+                                num_servers,
                                 max_iter, init_temp, cooling_type, 
                                 cooling_rate, alpha, 
                                 penalty_weight) {
@@ -142,7 +131,7 @@ simulated_annealing <- function(initial_solution, energy_efficiency, execution_t
                                       cpu_usage, memory_usage, network_traffic, power_consumption, 
                                       max_cpu, max_memory, max_net, max_pwr, penalty_weight)
   
-  # Initialize a vector to store the best objective value at each iteration
+  # Store best objective value at each iteration
   objective_history <- numeric(max_iter)
   objective_history[1] <- best_objective
   
@@ -174,7 +163,7 @@ simulated_annealing <- function(initial_solution, energy_efficiency, execution_t
     objective_history[i] <- best_objective
     
     # --------------------------
-    # Cooling down the temperature
+    # Temperature cooldown
     # --------------------------
     
     if (cooling_type == "geometric") {
@@ -188,7 +177,6 @@ simulated_annealing <- function(initial_solution, energy_efficiency, execution_t
       stop("Invalid cooling_type. Choose either 'geometric' or 'logarithmic'.")
     }
     
-    # Optional: Print progress every 100 iterations
     if (i %% 100 == 0) {
       cat("Iteration:", i, "Best Objective:", best_objective, "\n")
     }
@@ -203,16 +191,6 @@ simulated_annealing <- function(initial_solution, energy_efficiency, execution_t
 
 
 ```{r}
-# Example usage with Enhanced Parameters
-
-# Sample data (replace this with your actual data)
-# Assuming vm_cloud_clean_analysis has columns:
-# - energy_efficiency
-# - execution_time
-# - cpu_usage
-# - memory_usage
-# - network_traffic
-# - power_consumption
 
 energy_efficiency <- vm_cloud_clean_analysis$energy_efficiency
 execution_time <- vm_cloud_clean_analysis$execution_time
@@ -222,9 +200,9 @@ network_traffic <- vm_cloud_clean_analysis$network_traffic
 power_consumption <- vm_cloud_clean_analysis$power_consumption
 
 num_tasks <- length(energy_efficiency)
-num_servers <- 35  # As per your current setup
+num_servers <- 35
 
-# Define server capacities (adjusted as per MILP)
+# Server capacities
 max_cpu <- 80
 max_memory <- 80
 max_net <- 80
@@ -235,21 +213,20 @@ max_pwr <- 80
 set.seed(123)  # For reproducibility
 initial_solution <- sample(1:num_servers, num_tasks, replace = TRUE)
 
-# Define SA Parameters
+# SA Parameters
 max_iter <- 100000
 init_temp <- 50
 cooling_rate <- 0.995
-penalty_weight <- 10  # Penalty for resource overuse; adjust as needed
+penalty_weight <- 10  # Penalty for resource overuse
 alpha = 0.5
 
-# Run simulated annealing
+# Execute simulated annealing
 result_sa <- simulated_annealing(initial_solution, energy_efficiency, execution_time, 
                                   cpu_usage, memory_usage, network_traffic, power_consumption, 
                                   max_cpu, max_memory, max_net, max_pwr, num_servers,
                                   max_iter, init_temp, cooling_type = "logarithmic", cooling_rate = cooling_rate, alpha = alpha,
                                   penalty_weight)
 
-# View the best solution and its objective value
 print(result_sa$best_solution)
 print(paste("Best objective value:", result_sa$best_objective))
 
@@ -257,17 +234,15 @@ print(paste("Best objective value:", result_sa$best_objective))
 ```
 
 
-```{r}
-# Plot Objective Function Convergence
-library(ggplot2)
+# Visualize Task Assignment Distribution
 
-# Create a data frame for plotting
+```{r}
+
 objective_df <- data.frame(
   Iteration = 1:max_iter,
   Objective_Value = result_sa$objective_history
 )
 
-# Plot using ggplot2
 ggplot(objective_df, aes(x = Iteration, y = Objective_Value)) +
   geom_line(color = "blue") +
   labs(title = "Objective Function Convergence Over Iterations (Geometric Cooling)",
@@ -279,15 +254,13 @@ ggplot(objective_df, aes(x = Iteration, y = Objective_Value)) +
 
 
 ```{r}
-# Assuming 'result_sa$best_solution' contains the server assignments for each task
 
-# Create a data frame for task assignments
+# Task assignments
 assignments_sa <- data.frame(
   Task_ID = 1:num_tasks,
   Assigned_Server = result_sa$best_solution
 )
 
-# View the first few assignments (optional)
 head(assignments_sa)
 
 # Aggregate the number of tasks per server
@@ -295,12 +268,11 @@ task_counts <- assignments_sa %>%
   group_by(Assigned_Server) %>%
   summarise(Num_Tasks = n())
 
-# Ensure all servers are represented
 task_counts <- task_counts %>%
   complete(Assigned_Server = 1:num_servers, fill = list(Num_Tasks = 0))
 
 
-# Create a heatmap for Task Assignments
+# Heatmap for Task Assignments
 ggplot(task_counts, aes(x = factor(1), y = factor(Assigned_Server), fill = Num_Tasks)) +
   geom_tile(color = "white") +
   scale_fill_gradient(low = "lightblue", high = "darkblue") +
@@ -314,18 +286,18 @@ ggplot(task_counts, aes(x = factor(1), y = factor(Assigned_Server), fill = Num_T
 
 # Aggregate the number of tasks per server
 task_counts_sa <- assignments_sa %>%
-  filter(!is.na(Assigned_Server)) %>%  # Exclude any unassigned tasks, if any
+  filter(!is.na(Assigned_Server)) %>%
   group_by(Assigned_Server) %>%
   summarise(Num_Tasks = n()) %>%
-  complete(Assigned_Server = 1:num_servers, fill = list(Num_Tasks = 0))  # Ensure all servers are represented
+  complete(Assigned_Server = 1:num_servers, fill = list(Num_Tasks = 0))
 
-# Create a bar plot for Task Distribution in Simulated Annealing
+# Bar plot for Task Distribution
 ggplot(task_counts_sa, aes(x = factor(Assigned_Server), y = Num_Tasks)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   labs(title = "Number of Tasks Assigned to Each Server (Geometric Cooling)",
        x = "Server ID",
        y = "Number of Tasks") +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))  # Rotate x-axis labels if needed
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 ```
