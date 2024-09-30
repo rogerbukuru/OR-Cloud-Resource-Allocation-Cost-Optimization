@@ -1,6 +1,6 @@
 ---
 title: "MultiObjectiveGoalProgramming"
-author: "Roger Bukuru"
+author: "Roger Bukuru (BKRROG001)"
 date: "`r Sys.Date()`"
 output: html_document
 ---
