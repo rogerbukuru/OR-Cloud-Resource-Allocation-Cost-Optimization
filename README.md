@@ -1,12 +1,12 @@
 # Introduction
 
 As cloud computing grows, so does energy consumption in data centers, leading to increased operational costs and CO2 emissions. In this project we explore various optimization techniques that can enhance energy efficiency and reduce execution time in cloud environments. More particularly we will be exploring the following optimization techniques:
-\begin{itemize}
-    \item Multi-Integer Linear Programming
-    \item Simulated Annealing
-    \item Genetic Algorithms
-    \item Multi-Objective Goal Programming
-\end{itemize}
+
+
+- Multi-Integer Linear Programming
+- Simulated Annealing
+-  Genetic Algorithms
+-  Multi-Objective Goal Programming
 
 Our goal will be to implement each of these techniques, in order to allocate a fixed  number of computing tasks on a set of computing resources (servers) within the cloud environment such that we minimize execution time whilst maximizing energy efficiency. Each technique will be implemented, evaluated and thereafter the results will be compared in order to report which technique best achieves our goal.
 
