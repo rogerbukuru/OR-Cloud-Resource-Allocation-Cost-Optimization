@@ -218,7 +218,7 @@ max_iter <- 100000
 init_temp <- 50
 cooling_rate <- 0.995
 penalty_weight <- 10  # Penalty for resource overuse
-alpha = 0.5
+alpha = 0.1
 
 # Execute simulated annealing
 result_sa <- simulated_annealing(initial_solution, energy_efficiency, execution_time, 
@@ -245,7 +245,7 @@ objective_df <- data.frame(
 
 ggplot(objective_df, aes(x = Iteration, y = Objective_Value)) +
   geom_line(color = "blue") +
-  labs(title = "Objective Function Convergence Over Iterations (Geometric Cooling)",
+  labs(title = "Objective Function Convergence Over Iterations (Logarithmic Cooling)",
        x = "Iteration",
        y = "Objective Function Value") +
   theme_minimal()
@@ -276,7 +276,7 @@ task_counts <- task_counts %>%
 ggplot(task_counts, aes(x = factor(1), y = factor(Assigned_Server), fill = Num_Tasks)) +
   geom_tile(color = "white") +
   scale_fill_gradient(low = "lightblue", high = "darkblue") +
-  labs(title = "Task Assignments Heatmap (Geometric Cooling)",
+  labs(title = "Task Assignments Heatmap (Logarithmic Cooling)",
        x = "",
        y = "Server ID",
        fill = "Number of Tasks") +
@@ -294,7 +294,7 @@ task_counts_sa <- assignments_sa %>%
 # Bar plot for Task Distribution
 ggplot(task_counts_sa, aes(x = factor(Assigned_Server), y = Num_Tasks)) +
   geom_bar(stat = "identity", fill = "steelblue") +
-  labs(title = "Number of Tasks Assigned to Each Server (Geometric Cooling)",
+  labs(title = "Number of Tasks Assigned to Each Server (Logarithmic Cooling)",
        x = "Server ID",
        y = "Number of Tasks") +
   theme_minimal() +

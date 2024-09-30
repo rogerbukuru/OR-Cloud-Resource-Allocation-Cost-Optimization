@@ -53,7 +53,7 @@ vm_cloud_clean_analysis <- vm_cloud_standardized %>%
 # Preview the cleaned data
 head(vm_cloud_clean_analysis)
 
-#vm_cloud_clean_analysis = vm_cloud_clean_analysis[1:4800,]
+vm_cloud_clean_analysis = vm_cloud_clean_analysis[1:4800,]
 ```
 
 ```{r}
@@ -604,7 +604,7 @@ crossover_rate <- 0.8
 mutation_rate <- 0.01
 tournament_size <- 3
 crossover_type <- "uniform"  # Options: "single_point", "n_point", "uniform", "order_based", "pmx"
-mutation_type <- "random_reassignment"        # Options: "random_reassignment", "swap", "inversion", "scramble", "insert"
+mutation_type <- "swap"        # Options: "random_reassignment", "swap", "inversion", "scramble", "insert"
 generation_model <- "steady_state"  # Options: "generational", "steady_state"
 
 # Execute GA Algorithm
@@ -663,6 +663,7 @@ ga_fitness = ggplot(data.frame(Generation = 1:num_generations, Fitness = ga_resu
        y = "Best Fitness") +
   theme_minimal()
 
+print(ga_fitness)
 ggsave("images/GAFitness-UR.png", plot = ga_fitness, width = 12, height = 8)
 
 
@@ -684,6 +685,7 @@ ga_task_dbn = ggplot(task_counts_ga, aes(x = factor(Assigned_Server), y = Num_Ta
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
+print(ga_task_dbn)
 ggsave("images/GATaskDBNBarPlot-UR.png", plot = ga_task_dbn, width = 12, height = 8)
 
 
